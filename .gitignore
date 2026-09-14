@@ -1,0 +1,27 @@
+# Local guidance
+AGENTS.md
+CLAUDE.md
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.claude/
+.cursor/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+venv/
+env/
+
+# Model data and generated artifacts
+backend/data/
+
+# OS
+.DS_Store
+
+# Local planning docs (specs/plans stay untracked)
+docs/superpowers/
