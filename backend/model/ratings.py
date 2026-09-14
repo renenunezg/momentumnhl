@@ -20,8 +20,10 @@ def season_of(day: date) -> int:
 
 
 def _expected_goals(rates: pd.DataFrame, goal_map: dict) -> pd.DataFrame:
-    """Per (team, venue): xgf = EV + PP goals for per game, xga = EV + PK
-    goals against per game, each situation's per-60 scaled by its TOI share."""
+    """Per (team, venue): xgf = EV + PP + other goals for per game, xga = EV +
+    PK + other goals against per game, each situation's per-60 scaled by its
+    TOI share. The sheet's EV and PP tables already contained the mixed
+    strengths MoneyPuck keeps in "other"."""
     rates = rates.copy()
     share = rates["toi_per_game"] / 3600
     rates["gf_pg"] = predict_per60(rates, "for", goal_map) * share
@@ -31,10 +33,19 @@ def _expected_goals(rates: pd.DataFrame, goal_map: dict) -> pd.DataFrame:
         columns="situation",
         values=["gf_pg", "ga_pg", "games", "insufficient"],
     )
+
+    def column(value, situation):
+        key = (value, situation)
+        return wide[key].astype(float).fillna(0.0) if key in wide.columns else 0.0
+
     out = pd.DataFrame(
         {
-            "xgf": wide[("gf_pg", "ev")] + wide[("gf_pg", "pp")],
-            "xga": wide[("ga_pg", "ev")] + wide[("ga_pg", "pk")],
+            "xgf": column("gf_pg", "ev")
+            + column("gf_pg", "pp")
+            + column("gf_pg", "other"),
+            "xga": column("ga_pg", "ev")
+            + column("ga_pg", "pk")
+            + column("ga_pg", "other"),
             "games": wide[("games", "ev")],
             "insufficient": wide[("insufficient", "ev")].astype(bool),
         }

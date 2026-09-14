@@ -17,10 +17,11 @@ MONEYPUCK_URL = (
 )
 USER_AGENT = "Mozilla/5.0 (momentumnhl; renenunez.dev)"
 REQUEST_TIMEOUT_SECONDS = 180
-# The sheet's situations: even strength, power play, penalty kill. MoneyPuck's
-# "all" row supplies the official goals a game finished with, for grading the
-# backtest without a second source.
-SITUATIONS = {"5on5": "ev", "5on4": "pp", "4on5": "pk", "all": "all"}
+# The sheet's situations are even strength, power play, and penalty kill.
+# Natural Stat Trick folds 4v4, 3v3, 5v3, and empty-net play into those
+# tables; MoneyPuck keeps them in an "other" bucket, which the model carries
+# as a fourth situation so every goal is covered.
+SITUATIONS = {"5on5": "ev", "5on4": "pp", "4on5": "pk", "other": "other"}
 TEAM_CODES = {"L.A": "LAK", "N.J": "NJD", "S.J": "SJS", "T.B": "TBL"}
 COLUMNS = {
     "team": "team_abbr",

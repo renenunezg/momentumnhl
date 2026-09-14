@@ -16,7 +16,6 @@ BASE_URL = "https://api-web.nhle.com/v1"
 USER_AGENT = "Mozilla/5.0 (momentumnhl; renenunez.dev)"
 REQUEST_TIMEOUT_SECONDS = 30
 REGULAR_SEASON = 2
-PLAYOFFS = 3
 FINAL_STATES = ("OFF", "FINAL")
 PARTNER_COUNTRIES = ("US", "CA")
 
@@ -80,12 +79,13 @@ def _game_row(game: dict) -> dict:
 
 
 def schedule(start: date) -> tuple[list[dict], dict]:
-    """Seven days of games starting at `start`, regular season and playoffs."""
+    """Seven days of regular-season games starting at `start`. The model is
+    regular season only, like the sheet's Natural Stat Trick tables."""
     payload, receipt = _get(f"schedule/{start.isoformat()}", f"schedule_{start}")
     rows = []
     for day in payload.get("gameWeek", []):
         for game in day.get("games", []):
-            if int(game["gameType"]) not in (REGULAR_SEASON, PLAYOFFS):
+            if int(game["gameType"]) != REGULAR_SEASON:
                 continue
             row = _game_row(game)
             row["game_date"] = date.fromisoformat(day["date"])
@@ -98,7 +98,7 @@ def scores(day: date) -> tuple[list[dict], dict]:
     payload, receipt = _get(f"score/{day.isoformat()}", f"score_{day}")
     rows = []
     for game in payload.get("games", []):
-        if int(game["gameType"]) not in (REGULAR_SEASON, PLAYOFFS):
+        if int(game["gameType"]) != REGULAR_SEASON:
             continue
         row = _game_row(game)
         row["game_date"] = date.fromisoformat(game.get("gameDate", day.isoformat()))
@@ -106,8 +106,28 @@ def scores(day: date) -> tuple[list[dict], dict]:
     return rows, receipt
 
 
+def club_season(team_abbr: str, season: int) -> tuple[list[dict], dict]:
+    """Every game of one team's season with final scores and the finishing
+    period type; 32 calls cover a season for the backtest."""
+    season_id = f"{season}{season + 1}"
+    payload, receipt = _get(
+        f"club-schedule-season/{team_abbr}/{season_id}",
+        f"club_season_{team_abbr}_{season}",
+    )
+    rows = []
+    for game in payload.get("games", []):
+        if int(game["gameType"]) != REGULAR_SEASON:
+            continue
+        rows.append(_game_row(game))
+    return rows, receipt
+
+
 def standings(day: date) -> tuple[pd.DataFrame, dict]:
+    """Team identity from the standings table. Before opening night the dated
+    table is empty, so the current one (last season's final) stands in."""
     payload, receipt = _get(f"standings/{day.isoformat()}", f"standings_{day}")
+    if not payload.get("standings"):
+        payload, receipt = _get("standings/now", "standings_now")
     rows = [
         {
             "team_abbr": team["teamAbbrev"]["default"],

@@ -6,6 +6,8 @@ import numpy as np
 import pandas as pd
 
 from backend.config import BACKTEST_SEASONS
+from backend.etl import nhl_api, store
+from backend.etl.nhl_api import FINAL_STATES
 from backend.model.projections import project_games
 from backend.model.ratings import team_ratings
 
@@ -25,27 +27,39 @@ BACKTEST_COLUMNS = [
 ]
 
 
-def _fixtures(games: pd.DataFrame, season: int) -> pd.DataFrame:
-    """One row per game from the home team's 'all' row, with both scores."""
-    rows = games[games["season"].eq(season) & games["situation"].eq("all")]
-    home = rows[rows["venue"].eq("home")]
-    return pd.DataFrame(
+def official_results(games: pd.DataFrame, season: int) -> pd.DataFrame:
+    """Final scores from the NHL API, cached per season. MoneyPuck omits the
+    shootout-deciding goal, so a season's ties need the official record."""
+    path = store.raw_path("results", f"{season}.parquet")
+    if path.exists():
+        return pd.read_parquet(path)
+    teams = sorted(games.loc[games["season"].eq(season), "team_abbr"].unique())
+    rows = []
+    for team in teams:
+        for game in nhl_api.club_season(team, season)[0]:
+            if game["home_abbr"] == team and game["game_state"] in FINAL_STATES:
+                rows.append(game)
+    frame = pd.DataFrame(rows).drop_duplicates("game_id")
+    frame = pd.DataFrame(
         {
-            "game_id": home["game_id"].to_numpy(),
+            "game_id": frame["game_id"],
             "season": season,
-            "game_date": home["game_date"].to_numpy(),
-            "home_abbr": home["team_abbr"].to_numpy(),
-            "away_abbr": home["opponent"].to_numpy(),
-            "home_goals": home["gf"].astype(int).to_numpy(),
-            "away_goals": home["ga"].astype(int).to_numpy(),
+            "game_date": frame["game_date"],
+            "home_abbr": frame["home_abbr"],
+            "away_abbr": frame["away_abbr"],
+            "home_goals": frame["home_score"].astype(int),
+            "away_goals": frame["away_score"].astype(int),
+            "last_period_type": frame["last_period_type"],
         }
     ).sort_values(["game_date", "game_id"])
+    store.write_parquet(frame, path)
+    return frame
 
 
 def run(games: pd.DataFrame, goal_map: dict, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
     rows = []
     for season in seasons:
-        fixtures = _fixtures(games, season)
+        fixtures = official_results(games, season)
         for day, slate in fixtures.groupby("game_date"):
             try:
                 ratings, league = team_ratings(games, day, goal_map)
@@ -67,11 +81,11 @@ def run(games: pd.DataFrame, goal_map: dict, seasons=BACKTEST_SEASONS) -> pd.Dat
             projected = project_games(schedule, ratings, league, day)
             projected = projected[projected["missing_input_count"].eq(0)]
             merged = projected.merge(
-                slate[["game_id", "home_goals", "away_goals"]], on="game_id"
+                slate[["game_id", "home_goals", "away_goals", "last_period_type"]],
+                on="game_id",
             )
             rows.append(merged)
     frame = pd.concat(rows, ignore_index=True)
-    frame["last_period_type"] = None
     return frame.reindex(columns=BACKTEST_COLUMNS)
 
 

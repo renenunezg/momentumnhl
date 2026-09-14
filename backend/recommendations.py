@@ -1,7 +1,6 @@
 """Pregame decisions at the sheet's thresholds, frozen at first publication,
 and their settlement at the recorded line and price."""
 
-import json
 from datetime import timedelta
 
 import pandas as pd
@@ -106,9 +105,9 @@ def _base(projection, market, decision_at, receipts, flags) -> dict:
         "home_lambda": float(projection.home_lambda),
         "away_lambda": float(projection.away_lambda),
         "model_total": float(projection.model_total),
-        "source_timestamps": json.dumps(receipts),
-        "data_flags": json.dumps(flags),
-        "pricing_weights": json.dumps(PRICING_WEIGHTS),
+        "source_timestamps": receipts,
+        "data_flags": flags,
+        "pricing_weights": PRICING_WEIGHTS,
     }
 
 

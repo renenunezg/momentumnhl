@@ -9,7 +9,7 @@ import pandas as pd
 from backend.config import MIN_WINDOW_GAMES, WINDOW_GAMES
 from backend.etl.moneypuck import COUNT_COLUMNS
 
-MODEL_SITUATIONS = ("ev", "pp", "pk")
+MODEL_SITUATIONS = ("ev", "pp", "pk", "other")
 FOR_FEATURES = [
     "sf60", "scsh_pct", "hdgf60", "hdsh_pct", "mdsf60", "mdsh_pct",
     "mdgf60", "ldsf60", "ldsh_pct", "sh_pct",
