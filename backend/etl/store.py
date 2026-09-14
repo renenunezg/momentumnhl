@@ -1,0 +1,65 @@
+"""Parquet store under backend/data plus source receipts every stage shares."""
+
+import hashlib
+import json
+import os
+from datetime import UTC, datetime
+
+import pandas as pd
+
+from backend.config import PROCESSED_DIR, RAW_DIR
+
+RECEIPTS_DIR = PROCESSED_DIR / "receipts"
+
+
+def write_parquet(df: pd.DataFrame, path) -> None:
+    """Atomic parquet write: tmp file then os.replace."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    try:
+        df.to_parquet(temporary, index=False)
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def raw_path(*parts: str):
+    return RAW_DIR.joinpath(*parts)
+
+
+def write_raw(df: pd.DataFrame, *parts: str) -> None:
+    write_parquet(df, RAW_DIR.joinpath(*parts))
+
+
+def read_raw(*parts: str, columns: list[str] | None = None) -> pd.DataFrame:
+    return pd.read_parquet(RAW_DIR.joinpath(*parts), columns=columns)
+
+
+def write_processed(df: pd.DataFrame, *parts: str) -> None:
+    write_parquet(df, PROCESSED_DIR.joinpath(*parts))
+
+
+def read_processed(*parts: str, columns: list[str] | None = None) -> pd.DataFrame:
+    return pd.read_parquet(PROCESSED_DIR.joinpath(*parts), columns=columns)
+
+
+def receipt(name: str, content: bytes, observed_at: datetime | None = None) -> dict:
+    """Hash and timestamp of a fetched source, kept on disk so a decision can
+    carry the exact inputs it was made from."""
+    observed = (observed_at or datetime.now(UTC)).astimezone(UTC)
+    record = {
+        "name": name,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "observed_at": observed.isoformat().replace("+00:00", "Z"),
+        "bytes": len(content),
+    }
+    RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    (RECEIPTS_DIR / f"{name}.json").write_text(json.dumps(record, indent=1))
+    return record
+
+
+def read_receipt(name: str) -> dict | None:
+    path = RECEIPTS_DIR / f"{name}.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())
