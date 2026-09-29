@@ -41,6 +41,8 @@ def main() -> None:
         command = sub.add_parser(name, help=help_text)
         command.add_argument("--date")
     sub.add_parser("odds", help="print current partner offers")
+    verify = sub.add_parser("verify-quotes", help="independently check partner prices")
+    verify.add_argument("--date")
     sub.add_parser("grade", help="publish finals and settle pending decisions")
     backtest_parser = sub.add_parser("backtest", help="walk-forward backtest")
     backtest_parser.add_argument("--publish", action="store_true")
@@ -140,6 +142,14 @@ def main() -> None:
             "home_lambda", "home_win_prob", "model_total", "home_fair_price",
         ]  # fmt: skip
         print(frame[columns].round(3).to_string(index=False))
+    elif args.command == "verify-quotes":
+        from backend import pipeline
+        from backend.odds import verification
+
+        schedule, _ = pipeline.fetch_schedule(_day(args.date))
+        offers, _ = pipeline.fetch_offers()
+        _, report = verification.verify(offers, schedule)
+        print(json.dumps(report, indent=2))
     elif args.command == "odds":
         from backend import pipeline
 

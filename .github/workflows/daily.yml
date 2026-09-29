@@ -53,5 +53,6 @@ jobs:
           path: |
             backend/data/processed/receipts
             backend/data/processed/decisions
+            backend/data/raw/quote_verification
           retention-days: 90
           if-no-files-found: ignore

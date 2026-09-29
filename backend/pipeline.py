@@ -18,7 +18,7 @@ from backend.etl import moneypuck, nhl_api, store
 from backend.model import goal_map
 from backend.model.projections import project_games
 from backend.model.ratings import season_of, team_ratings
-from backend.odds import partner
+from backend.odds import partner, verification
 
 SCHEDULE_DAYS = 7
 RESULT_LOOKBACK_DAYS = 3
@@ -108,6 +108,7 @@ def daily(day: date, engine=None, force_download: bool = False) -> dict:
     schedule, receipts["schedule"] = fetch_schedule(day)
     finals, observation, receipts["scores"] = fetch_results(day)
     offers, odds_receipts = fetch_offers()
+    offers, quote_verification = verification.verify(offers, schedule)
     # A manifest preserves both provider receipts under the ledger's single
     # odds source, regardless of which provider supplies the chosen offer.
     receipts["odds"] = store.receipt(
@@ -140,6 +141,7 @@ def daily(day: date, engine=None, force_download: bool = False) -> dict:
         "finals": len(finals),
         "recommended": int(decisions["status"].eq("recommended").sum()),
         "no_play": int(decisions["status"].eq("no_play").sum()),
+        "quote_verification": quote_verification,
     }
     if engine is None:
         return summary

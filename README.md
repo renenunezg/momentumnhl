@@ -18,7 +18,7 @@ Outputs publish to the `nhl` schema of a Postgres database that a separate web f
    Version 1.1 widens the Poisson grid to a tail tolerance of 1e-12 and normalizes its mass.
    Production retains equal tie allocation and rates that already include overtime; explicit regulation-to-final overtime treatment is experimental.
 5. **Prices and picks.** Lines come from the NHL's partner feed: DraftKings in the US and FanDuel in Canada.
-   Quotes must be dated within 24 hours.
+   Quotes need a provider timestamp within 24 hours or an exact, independently corroborated DraftKings public listing observed within 15 minutes of publication.
    Moneylines require 13 percentage points of edge and positive expected value; totals require a one-goal difference.
    Stakes are flat one unit; fractional Kelly is informational.
    Decisions freeze at first publication.
@@ -63,6 +63,21 @@ Historical quote coverage is currently insufficient to establish whether blendin
   Historical official results are cached under `backend/data/raw/results/`.
 - The Odds API is never called.
 
+## Independent quote verification
+
+When a future DraftKings offer has old provider metadata, the daily run makes at most one additional request to DraftKings Network's public NHL betting-splits page.
+It matches the teams, scheduled date, full-game market, side, total and exact American price; the NHL partner feed remains the source of the published price.
+The book's listed puck-drop time may be up to 15 minutes after the official broadcast start, but publication still stops at the earlier official time.
+A response needs a valid HTTP Date and no more than five minutes of HTTP age.
+The original HTML is stored by SHA-256, and matched quotes and fetch metadata are retained with the workflow artifacts.
+
+This proves a recent observation of DraftKings' public listing, not the timestamp of its internal quote update or guaranteed bet acceptance.
+The provider's original timestamp is preserved, and independently corroborated decisions carry evidence in `data_flags.quote_verification` and `source_timestamps.quote_verification`.
+Python and PostgreSQL reject evidence more than 15 minutes old at decision/publication time, mismatched fields, unsupported markets and late fixtures.
+A failed fetch, changed page layout or unmatched quote leaves the old offer ineligible.
+FanDuel has no independent verifier and still requires its provider timestamp.
+No paid odds API or additional Supabase polling is involved.
+
 ## Commands
 
 ```bash
@@ -72,6 +87,7 @@ poetry run python -m backend ingest
 poetry run python -m backend ratings
 poetry run python -m backend project
 poetry run python -m backend odds
+poetry run python -m backend verify-quotes
 poetry run python -m backend daily --no-publish
 poetry run python -m backend backtest
 poetry run python -m backend ingest-goalies --seasons 2021 2022 2023 2024 2025
@@ -92,12 +108,12 @@ A successful cron SQL statement does not prove that GitHub accepted the HTTP dis
 
 ## Schema
 
-`sql/001_nhl_schema.sql` is the frontend contract.
-It defines teams, ratings, projections, immutable pregame snapshots, market snapshots, official results, backtest predictions, recommendations, and reporting views/functions.
+The ordered `sql/*.sql` migrations are the frontend contract.
+They define teams, ratings, projections, immutable pregame snapshots, market snapshots, official results, backtest predictions, recommendations, and reporting views/functions.
 Research outputs and starter inputs do not alter this schema.
 
 ## Remaining work
 
-Repair the dispatch authorization and verify a full published-and-graded production cycle.
+Verify a full published-and-graded production cycle after the repaired dispatch authorization.
 Collect timestamped pregame market and starter evidence before evaluating their incremental value in live conditions.
 Candidate promotion, coherent calibrated bet pricing, period-specific overtime inputs, puck-line pricing and closing-line capture remain separate work.

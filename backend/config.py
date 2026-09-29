@@ -11,7 +11,7 @@ PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
 MODEL_VERSION = "nhl-poisson-v1.1"
-POLICY_VERSION = "nhl-picks-v1"
+POLICY_VERSION = "nhl-picks-v1.1"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the
 # model only needs a rolling window plus a few seasons for the goal map and
@@ -29,7 +29,7 @@ TOTAL_MIN_EDGE_GOALS = 1.0
 KELLY_FRACTION = 0.10
 MIN_PRICE_MULTIPLIER = 1.1
 # Partner feeds carry one timestamp for the whole slate; anything older than
-# this at decision time is not a live quote.
+# this needs independent public-listing corroboration before it is eligible.
 MAX_OFFER_AGE_HOURS = 24
 
 SITE_TIME_ZONE = "America/Los_Angeles"

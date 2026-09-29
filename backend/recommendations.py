@@ -13,6 +13,7 @@ from backend.config import (
 )
 from backend.model import pricing
 from backend.model.poisson import TAIL_TOLERANCE, total_probabilities
+from backend.odds import verification
 
 MARKETS = ("h2h", "totals")
 RECOMMENDATION_COLUMNS = [
@@ -211,13 +212,29 @@ def decide(
                     )
                 )
                 continue
-            fresh = market_offers[
-                (_timestamp(market_offers["provider_last_update"]) >= stale_before)
+            timestamp_fresh = (
+                _timestamp(market_offers["provider_last_update"]) >= stale_before
+            )
+            verified = pd.Series(False, index=market_offers.index)
+            if "quote_verification" in market_offers:
+                verified = market_offers.apply(
+                    lambda offer: verification.valid(
+                        offer.quote_verification, offer, projection, decision_at
+                    ),
+                    axis=1,
+                )
+            valid_fixture = (
+                (_timestamp(market_offers["fetched_at"]) <= decision_at)
+                & (
+                    _timestamp(market_offers["provider_start_date"])
+                    == _timestamp(projection.start_date)
+                )
                 & (
                     _timestamp(market_offers["provider_last_update"])
                     <= _timestamp(market_offers["fetched_at"])
                 )
-            ]
+            )
+            fresh = market_offers[(timestamp_fresh | verified) & valid_fixture]
             if fresh.empty:
                 rows.append(
                     _no_play(
@@ -225,10 +242,13 @@ def decide(
                     )
                 )
                 continue
-            candidates = [
-                _candidate(projection, offer, market)
-                for offer in fresh.itertuples(index=False)
-            ]
+            candidates = []
+            for index, offer in fresh.iterrows():
+                candidate = _candidate(projection, offer, market)
+                candidate["verification_evidence"] = (
+                    offer.quote_verification if verified.at[index] else None
+                )
+                candidates.append(candidate)
             eligible = [c for c in candidates if _eligible(c, market)]
             if not eligible:
                 reason = (
@@ -242,9 +262,22 @@ def decide(
                 continue
             key = "probability_edge" if market == "h2h" else "edge_points"
             best = max(eligible, key=lambda c: (c[key], c["price"]))
+            evidence = best.pop("verification_evidence")
+            decision_flags, decision_receipts = dict(flags), dict(receipts)
+            if evidence is not None:
+                decision_flags["quote_verification"] = evidence
+                decision_receipts["quote_verification"] = {
+                    k: evidence[k] for k in ("sha256", "observed_at")
+                }
             rows.append(
                 {
-                    **_base(projection, market, decision_at, receipts, flags),
+                    **_base(
+                        projection,
+                        market,
+                        decision_at,
+                        decision_receipts,
+                        decision_flags,
+                    ),
                     "status": "recommended",
                     "reason": "edge_gate",
                     "stake_units": 1.0,
