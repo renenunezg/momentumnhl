@@ -49,10 +49,19 @@ def _block_unauthorized_writes(
 def _configure_session(dbapi_connection, connection_record):
     # publish.py qualifies every statement; the search_path only serves
     # ad-hoc queries. A session SET beats the shared role's own setting.
-    with dbapi_connection.cursor() as cursor:
-        cursor.execute("SET search_path TO nhl, public")
-        if not writes_allowed():
-            cursor.execute("SET default_transaction_read_only = on")
+    # Session settings must be outside a transaction so the very first
+    # application transaction is protected and rollback cannot undo them.
+    autocommit = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cursor:
+            cursor.execute("SET search_path TO nhl, public")
+            cursor.execute(
+                "SET default_transaction_read_only = "
+                + ("off" if writes_allowed() else "on")
+            )
+    finally:
+        dbapi_connection.autocommit = autocommit
 
 
 _engine = None

@@ -1,6 +1,7 @@
 """The daily run: ingest, grade, rate, project, price, decide, publish. Each
 stage is also a CLI command so a piece can be rerun on its own."""
 
+import json
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -107,7 +108,11 @@ def daily(day: date, engine=None, force_download: bool = False) -> dict:
     schedule, receipts["schedule"] = fetch_schedule(day)
     finals, observation, receipts["scores"] = fetch_results(day)
     offers, odds_receipts = fetch_offers()
-    receipts["odds"] = odds_receipts[-1]
+    # A manifest preserves both provider receipts under the ledger's single
+    # odds source, regardless of which provider supplies the chosen offer.
+    receipts["odds"] = store.receipt(
+        "partner_odds", json.dumps(odds_receipts, sort_keys=True).encode()
+    )
     ratings, league = build_ratings(day, teams)
     as_of = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     projections = project_games(schedule, ratings, league, as_of)

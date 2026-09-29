@@ -43,6 +43,12 @@ def project_games(
     by_team = ratings.set_index("team_abbr")
     rows = []
     for game in schedule_rows:
+        # Intraday retries may include games already underway. Their stored
+        # forecast and decision must remain the pregame versions.
+        if pd.Timestamp(game["start_date"]) <= pd.Timestamp(as_of) or game.get(
+            "game_state"
+        ) not in (None, "FUT", "PRE"):
+            continue
         home, away = game["home_abbr"], game["away_abbr"]
         if home not in by_team.index or away not in by_team.index:
             continue
