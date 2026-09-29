@@ -171,7 +171,7 @@ def corroborate(html, receipt, offers, schedule):
                 if not re.fullmatch(r"[+-]\d+", price_text):
                     continue
                 price = float(price_text)
-                if abs(price) < 100:
+                if not math.isfinite(price) or abs(price) < 100:
                     continue
                 if kind == "h2h":
                     side = next(
@@ -192,7 +192,8 @@ def corroborate(html, receipt, offers, schedule):
                         continue
                     side, point = total[1].lower(), float(total[2])
                     if (
-                        point <= 0
+                        not math.isfinite(point)
+                        or point <= 0
                         or point * 2 != round(point * 2)
                         or int(identity[3]) != round(point * 100)
                         or (identity[2], identity[4])

@@ -189,6 +189,7 @@ def test_live_listing_to_decision_fails_closed(quote_case):
         c.html.replace("0ML", "1ML").replace("0OU", "1OU"),
         c.html.replace("outcomes=", "disabled="),
         c.html + c.html,
+        c.html.replace("6.5", "9" * 400).replace("Moneyline", "Unsupported"),
     ):
         assert (
             verification.corroborate(html, receipt, c.offers, [c.game])
