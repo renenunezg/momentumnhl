@@ -10,7 +10,7 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
-MODEL_VERSION = "nhl-poisson-v1"
+MODEL_VERSION = "nhl-poisson-v1.1"
 POLICY_VERSION = "nhl-picks-v1"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the

@@ -8,6 +8,7 @@ import pandas as pd
 from backend.config import BACKTEST_SEASONS
 from backend.etl import nhl_api, store
 from backend.etl.nhl_api import FINAL_STATES
+from backend.model import goal_map as goal_map_model
 from backend.model.projections import project_games
 from backend.model.ratings import team_ratings
 
@@ -56,13 +57,19 @@ def official_results(games: pd.DataFrame, season: int) -> pd.DataFrame:
     return frame
 
 
-def run(games: pd.DataFrame, goal_map: dict, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
+def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
     rows = []
     for season in seasons:
+        training_seasons = sorted(
+            games.loc[games["season"] < season, "season"].unique()
+        )
+        if not training_seasons:
+            raise ValueError(f"No prior seasons to fit the goal map for {season}")
+        fitted_map = goal_map_model.fit(games, training_seasons)
         fixtures = official_results(games, season)
         for day, slate in fixtures.groupby("game_date"):
             try:
-                ratings, league = team_ratings(games, day, goal_map)
+                ratings, league = team_ratings(games, day, fitted_map)
             except ValueError:
                 continue
             schedule = [

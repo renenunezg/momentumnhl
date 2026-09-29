@@ -12,7 +12,7 @@ from backend.config import (
     TOTAL_MIN_EDGE_GOALS,
 )
 from backend.model import pricing
-from backend.model.poisson import total_probabilities
+from backend.model.poisson import TAIL_TOLERANCE, total_probabilities
 
 MARKETS = ("h2h", "totals")
 RECOMMENDATION_COLUMNS = [
@@ -71,7 +71,7 @@ PRICING_WEIGHTS = {
     "moneyline_min_edge": MONEYLINE_MIN_EDGE,
     "total_min_edge_goals": TOTAL_MIN_EDGE_GOALS,
     "tie_split": 0.5,
-    "grid_max_goals": 10,
+    "grid_tail_tolerance": TAIL_TOLERANCE,
 }
 
 

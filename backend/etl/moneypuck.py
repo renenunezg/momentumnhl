@@ -34,6 +34,7 @@ COLUMNS = {
     "iceTime": "toi",
     "shotsOnGoalFor": "sf",
     "goalsFor": "gf",
+    "xGoalsFor": "xgf",
     "lowDangerShotsFor": "ld_sf",
     "mediumDangerShotsFor": "md_sf",
     "highDangerShotsFor": "hd_sf",
@@ -42,6 +43,7 @@ COLUMNS = {
     "highDangerGoalsFor": "hd_gf",
     "shotsOnGoalAgainst": "sa",
     "goalsAgainst": "ga",
+    "xGoalsAgainst": "xga",
     "lowDangerShotsAgainst": "ld_sa",
     "mediumDangerShotsAgainst": "md_sa",
     "highDangerShotsAgainst": "hd_sa",
@@ -53,6 +55,7 @@ COLUMNS = {
 COUNT_COLUMNS = [
     "toi", "sf", "gf", "ld_sf", "md_sf", "hd_sf", "ld_gf", "md_gf", "hd_gf",
     "sa", "ga", "ld_sa", "md_sa", "hd_sa", "ld_ga", "md_ga", "hd_ga",
+    "xgf", "xga",
 ]  # fmt: skip
 
 

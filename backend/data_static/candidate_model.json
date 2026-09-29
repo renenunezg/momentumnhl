@@ -1,0 +1,47 @@
+{
+  "probability": {
+    "name": "xg0.5-prior10-venue0-ot1-goalie0",
+    "specification": {
+      "xg_weight": 0.5,
+      "prior_games": 10,
+      "venue_weight": 0.0,
+      "overtime": true,
+      "goalie_weight": 0.0
+    },
+    "calibrated": false,
+    "n": 2624,
+    "log_loss": 0.6661714515546028,
+    "brier": 0.23686877937359388,
+    "accuracy": 0.5960365853658537,
+    "home_win_rate": 0.551829268292683,
+    "total_mae": 1.8670401014137643,
+    "total_bias": 0.006096238819733873
+  },
+  "total": {
+    "name": "xg0.5-prior25-venue0-ot0-goalie0-calibrated",
+    "specification": {
+      "xg_weight": 0.5,
+      "prior_games": 25,
+      "venue_weight": 0.0,
+      "overtime": false,
+      "goalie_weight": 0.0
+    },
+    "calibrated": true,
+    "n": 2624,
+    "log_loss": 0.6670656727906208,
+    "brier": 0.23729453821776048,
+    "accuracy": 0.5933689024390244,
+    "home_win_rate": 0.551829268292683,
+    "total_mae": 1.8603059070581585,
+    "total_bias": -0.19403119999230753
+  },
+  "development_seasons": [
+    2023,
+    2024
+  ],
+  "holdout_season": 2025,
+  "status": "shadow_only",
+  "selection_rule": "2023-24 development only; 2025 retrospective evaluation",
+  "data_caveat": "Current MoneyPuck historical release, not vintage xG snapshots",
+  "model_version": "nhl-xg-candidate-v2"
+}

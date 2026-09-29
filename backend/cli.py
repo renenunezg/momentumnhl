@@ -5,6 +5,7 @@ command."""
 import argparse
 import json
 from datetime import date
+from pathlib import Path
 
 from backend.config import BACKTEST_SEASONS, HISTORY_START_SEASON
 
@@ -27,6 +28,10 @@ def main() -> None:
 
     ingest = sub.add_parser("ingest", help="download MoneyPuck and cache by season")
     ingest.add_argument("--seasons", nargs="+", type=int)
+    goalie_ingest = sub.add_parser(
+        "ingest-goalies", help="cache listed goalie game logs"
+    )
+    goalie_ingest.add_argument("--seasons", nargs="+", type=int, required=True)
     sub.add_parser("fit-goal-map", help="refit the goal map on the configured seasons")
     for name, help_text in (
         ("ratings", "print today's ratings"),
@@ -39,13 +44,59 @@ def main() -> None:
     sub.add_parser("grade", help="publish finals and settle pending decisions")
     backtest_parser = sub.add_parser("backtest", help="walk-forward backtest")
     backtest_parser.add_argument("--publish", action="store_true")
+    validation = sub.add_parser("validate", help="chronological candidate evaluation")
+    validation.add_argument("--output", type=Path, required=True)
+    candidate = sub.add_parser("candidate", help="unpublished candidate forecasts")
+    candidate.add_argument("--date")
+    candidate.add_argument("--selection", type=Path, required=True)
+    candidate.add_argument("--confirmations", type=Path)
+    market = sub.add_parser(
+        "validate-market", help="timestamped market-blend evaluation"
+    )
+    market.add_argument("--predictions", type=Path, required=True)
+    market.add_argument("--snapshots", type=Path, required=True)
     daily = sub.add_parser("daily", help="the production morning run")
     daily.add_argument("--date")
     daily.add_argument("--no-publish", action="store_true")
     daily.add_argument("--force-download", action="store_true")
 
     args = parser.parse_args()
-    if args.command == "ingest":
+    if args.command == "validate":
+        from backend.validation import run
+
+        print(json.dumps(run(args.output), indent=2))
+    elif args.command == "candidate":
+        import pandas as pd
+
+        from backend.candidate import project
+
+        confirmations = (
+            pd.read_parquet(args.confirmations) if args.confirmations else None
+        )
+        print(
+            project(_day(args.date), args.selection, confirmations).to_json(
+                orient="records", date_format="iso", indent=2
+            )
+        )
+    elif args.command == "validate-market":
+        import pandas as pd
+
+        from backend.model.market import evaluate
+
+        print(
+            json.dumps(
+                evaluate(
+                    pd.read_parquet(args.predictions), pd.read_parquet(args.snapshots)
+                ),
+                indent=2,
+            )
+        )
+    elif args.command == "ingest-goalies":
+        from backend.etl import goalies
+
+        frame = goalies.load(args.seasons, download=True)
+        print(json.dumps({"rows": len(frame), "games": frame.game_id.nunique()}))
+    elif args.command == "ingest":
         from backend.etl import moneypuck
 
         seasons = args.seasons or range(HISTORY_START_SEASON, date.today().year + 1)

@@ -93,7 +93,7 @@ def fetch_offers() -> tuple[pd.DataFrame, list[dict]]:
 
 def run_backtest() -> pd.DataFrame:
     games = moneypuck.read_games(range(HISTORY_START_SEASON, max(BACKTEST_SEASONS) + 1))
-    frame = backtest.run(games, goal_map.load(), BACKTEST_SEASONS)
+    frame = backtest.run(games, BACKTEST_SEASONS)
     store.write_processed(frame, "backtest.parquet")
     return frame
 
