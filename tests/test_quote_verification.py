@@ -20,7 +20,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend import publish
 from backend.model.projections import PROJECTION_COLUMNS
-from backend.odds import verification
+from backend.odds import partner, verification
 from backend.recommendations import RECOMMENDATION_COLUMNS, decide
 
 
@@ -121,6 +121,15 @@ def test_live_listing_to_decision_fails_closed(quote_case):
     c = quote_case
     checked, report = verification.verify(c.offers, [c.game])
     assert report["verified"] == 4 and len(c.calls) == 1
+    snapshot = partner.market_snapshot(checked).iloc[0]
+    assert set(snapshot.quote_verifications) == {
+        "h2h_home",
+        "h2h_away",
+        "totals_over",
+        "totals_under",
+    }
+    assert snapshot.quote_verifications["h2h_away"]["price"] == 110
+    assert partner.market_snapshot(c.offers).iloc[0].quote_verifications == {}
     archived = c.tmp_path / "raw/quote_verification" / (report["sha256"] + ".gz")
     assert (
         hashlib.sha256(gzip.decompress(archived.read_bytes())).hexdigest()
@@ -256,6 +265,17 @@ def test_database_enforces_publication_evidence(quote_case):
     with engine.connect() as conn:
         transaction = conn.begin()
         target = Table("recommendations", MetaData(), schema="nhl", autoload_with=conn)
+        snapshots = partner.market_snapshot(checked)
+        publish._insert_ignore(
+            publish._prepare(snapshots, publish.MARKET_SNAPSHOTS_COLUMNS),
+            "market_snapshots",
+            conn,
+            ["game_id", "provider_key", "fetched_at"],
+        )
+        archived = conn.execute(
+            text("select quote_verifications from nhl.market_snapshots")
+        ).scalar_one()
+        assert len(archived) == 4 and archived["h2h_away"]["price"] == 110
         for row in records:
             for field, value in (
                 ("sha256", "bad"),

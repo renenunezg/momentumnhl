@@ -62,7 +62,6 @@ _TIMESTAMP_COLUMNS = {
     "result_source_at",
 }
 _DATE_COLUMNS = {"as_of_date", "game_date"}
-_JSON_COLUMNS = {"source_timestamps", "data_flags", "pricing_weights"}
 
 
 def _prepare(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:

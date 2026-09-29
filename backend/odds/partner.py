@@ -29,6 +29,7 @@ SNAPSHOT_COLUMNS = [
     "puck_line",
     "home_puck_price",
     "away_puck_price",
+    "quote_verifications",
 ]
 
 
@@ -110,6 +111,11 @@ def market_snapshot(all_offers: pd.DataFrame) -> pd.DataFrame:
                 "puck_line": point("puck", "home"),
                 "home_puck_price": price("puck", "home"),
                 "away_puck_price": price("puck", "away"),
+                "quote_verifications": {
+                    f"{offer.market}_{offer.side}": offer.quote_verification
+                    for offer in group.itertuples(index=False)
+                    if isinstance(getattr(offer, "quote_verification", None), dict)
+                },
             }
         )
     return pd.DataFrame(rows, columns=SNAPSHOT_COLUMNS)

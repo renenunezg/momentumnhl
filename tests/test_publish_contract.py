@@ -34,6 +34,11 @@ def _ddl_columns(table: str) -> list[str]:
         # Multi-line constraints never start with a column type in second place.
         if len(tokens) >= 2 and tokens[1] in TYPES:
             columns.append(tokens[0])
+    # Additive migrations preserve the original table declaration.
+    for alteration in re.finditer(
+        rf"alter table nhl\.{table}\s+add column (\w+) ", DDL, re.IGNORECASE
+    ):
+        columns.append(alteration.group(1))
     return columns
 
 
