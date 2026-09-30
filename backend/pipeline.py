@@ -63,11 +63,25 @@ def fetch_schedule(day: date) -> tuple[list[dict], dict]:
     return [r for r in rows if day <= r["game_date"] < end], receipt
 
 
-def fetch_results(day: date) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+def fetch_results(
+    day: date, teams: pd.DataFrame | None = None
+) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Finals and fixture observations for the last few days including today."""
+    if teams is None:
+        teams, _ = nhl_api.standings(day)
+    names = teams.set_index("team_abbr")["team"].to_dict()
     score_rows, receipt = [], None
     for offset in range(RESULT_LOOKBACK_DAYS, -1, -1):
         rows, receipt = nhl_api.scores(day - timedelta(days=offset))
+        # The score endpoint has nicknames, unlike the schedule's full names.
+        # Resolve identities by abbreviation before the settlement name check.
+        for row in rows:
+            for side in ("home", "away"):
+                abbr = row[f"{side}_abbr"]
+                name = names.get(abbr)
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError(f"Missing canonical NHL team name for {abbr}")
+                row[f"{side}_team"] = name
         score_rows.extend(rows)
     fetched_at = receipt["observed_at"]
     finals = grading.results(score_rows, fetched_at)
@@ -106,7 +120,7 @@ def daily(day: date, engine=None, force_download: bool = False) -> dict:
     receipts = {"moneypuck": ingest_moneypuck(day, force_download)}
     teams, receipts["standings"] = load_teams(day)
     schedule, receipts["schedule"] = fetch_schedule(day)
-    finals, observation, receipts["scores"] = fetch_results(day)
+    finals, observation, receipts["scores"] = fetch_results(day, teams)
     offers, odds_receipts = fetch_offers()
     offers, quote_verification = verification.verify(offers, schedule)
     # A manifest preserves both provider receipts under the ledger's single

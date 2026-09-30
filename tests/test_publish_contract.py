@@ -1,12 +1,18 @@
 """The publish column lists are the frontend contract; they must match the
 checked-in DDL exactly, column for column."""
 
+import json
 import re
+from datetime import date
 from pathlib import Path
 
-from backend import publish
+import pandas as pd
+import pytest
+
+from backend import pipeline, publish
 from backend.backtest import BACKTEST_COLUMNS
-from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS
+from backend.etl import nhl_api
+from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS, settle
 
 TYPES = {"text", "int", "float8", "timestamptz", "date", "bool", "jsonb", "bigint"}
 DDL = "\n".join(
@@ -56,3 +62,69 @@ def test_recommendation_columns_match_ddl():
     ]
     assert decision == RECOMMENDATION_COLUMNS
     assert ddl[-7:] == SETTLEMENT_COLUMNS[2:]
+
+
+def test_official_score_feed_preserves_settlement_identity(monkeypatch):
+    payload = json.loads(
+        (Path(__file__).parent / "fixtures/score_2026_09_29_bos_nyr.json").read_text()
+    )
+    observed_at = "2026-09-30T14:01:00.402294Z"
+    receipt = {"observed_at": observed_at}
+    teams = pd.DataFrame(
+        {"team_abbr": ["BOS", "NYR"], "team": ["Boston Bruins", "New York Rangers"]}
+    )
+    monkeypatch.setattr(
+        nhl_api,
+        "_get",
+        lambda path, name: (
+            payload if path == "score/2026-09-29" else {"games": []},
+            receipt,
+        ),
+    )
+    calls = []
+
+    def standings(day):
+        calls.append(day)
+        return teams, receipt
+
+    monkeypatch.setattr(nhl_api, "standings", standings)
+    day = date(2026, 9, 30)
+    # Daily reuses its team source; the standalone grade command fetches it once.
+    daily = pipeline.fetch_results(day, teams)
+    assert not calls
+    grading = pipeline.fetch_results(day)
+    assert calls == [day]
+    for finals, observation, _ in (daily, grading):
+        result = finals.iloc[0]
+        fixture = observation.iloc[0]
+        assert result.home_team == fixture.home_team == "Boston Bruins"
+        assert result.away_team == fixture.away_team == "New York Rangers"
+        assert (result.home_goals, result.away_goals) == (3, 0)
+        pending = pd.DataFrame(
+            [
+                {
+                    "game_id": result.game_id,
+                    "market": market,
+                    "status": status,
+                    "start_date": result.start_date,
+                    "side": "home",
+                    "point": None,
+                    "price": -110,
+                    "stake_units": stake,
+                }
+                for market, status, stake in (
+                    ("h2h", "recommended", 1),
+                    ("totals", "no_play", 0),
+                )
+            ]
+        )
+        settlements = publish._prepare(
+            settle(pending, finals, observation, "2026-09-30T14:01:01.488063Z"),
+            SETTLEMENT_COLUMNS,
+        )
+        saved = publish._prepare(observation, publish.RECOMMENDATION_SCHEDULE_COLUMNS)
+        assert settlements.outcome.tolist() == ["win", "no_play"]
+        assert settlements.result_source_at.eq(saved.iloc[0].observed_at).all()
+        assert saved.iloc[0].completed
+    with pytest.raises(ValueError, match="Missing canonical NHL team name for NYR"):
+        pipeline.fetch_results(day, teams.iloc[:1])
