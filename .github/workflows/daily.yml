@@ -3,7 +3,7 @@
 # last few days. Runs every day; an off-season day publishes ratings only.
 name: daily
 on:
-  # Supabase pg_cron: nhl-daily-dispatch, daily at 14:00 UTC from the day
+  # Supabase pg_cron: nhl-daily-dispatch, daily at 16:15 UTC from the day
   # before opening night through April; nothing fires in the off-season.
   repository_dispatch:
     types: [nhl-daily]
@@ -24,7 +24,7 @@ permissions:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,7 +41,7 @@ jobs:
           key: nhl-results-${{ hashFiles('backend/backtest.py') }}
       - name: Daily run
         run: >-
-          poetry run python -m backend daily
+          poetry run python -m backend daily --odds-wait-minutes 90
           ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

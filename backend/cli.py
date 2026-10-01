@@ -61,6 +61,12 @@ def main() -> None:
     daily.add_argument("--date")
     daily.add_argument("--no-publish", action="store_true")
     daily.add_argument("--force-download", action="store_true")
+    daily.add_argument(
+        "--odds-wait-minutes",
+        type=float,
+        default=0,
+        help="how long to poll for the partner feed to reach today's slate",
+    )
 
     args = parser.parse_args()
     if args.command == "validate":
@@ -194,5 +200,7 @@ def main() -> None:
         from backend import pipeline
 
         engine = None if args.no_publish else _engine()
-        summary = pipeline.daily(_day(args.date), engine, args.force_download)
+        summary = pipeline.daily(
+            _day(args.date), engine, args.force_download, args.odds_wait_minutes
+        )
         print(json.dumps(summary, indent=1))

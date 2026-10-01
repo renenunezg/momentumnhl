@@ -102,7 +102,8 @@ The `candidate` command accepts `--confirmations` for a timestamped starter parq
 
 Database writes are blocked unless `GITHUB_ACTIONS=true` or `MOMENTUMNHL_DB_WRITES=1`.
 The production command is `poetry run python -m backend daily`; `backtest --publish` also writes remotely.
-Supabase pg_cron dispatches GitHub Actions at 14:00 UTC on September 28-30 and daily October through April.
+Supabase pg_cron dispatches GitHub Actions at 16:15 UTC on September 28-30 and daily October through April.
+The partner feed serves the previous slate until about noon Eastern, so the run polls for up to 90 minutes for the day's slate and fails if it never arrives.
 Python and MoneyPuck downloads run on GitHub, while Supabase stores the derived outputs.
 A successful cron SQL statement does not prove that GitHub accepted the HTTP dispatch or completed the pipeline.
 

@@ -2,6 +2,7 @@
 stage is also a CLI command so a piece can be rerun on its own."""
 
 import json
+import time
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -23,6 +24,7 @@ from backend.odds import partner, verification
 SCHEDULE_DAYS = 7
 RESULT_LOOKBACK_DAYS = 3
 MONEYPUCK_REUSE_HOURS = 6
+ODDS_POLL_SECONDS = 300
 
 
 def site_today() -> date:
@@ -97,12 +99,29 @@ def build_ratings(day: date, teams: pd.DataFrame):
     return ratings, league
 
 
-def fetch_offers() -> tuple[pd.DataFrame, list[dict]]:
-    frames, receipts = [], []
-    for country in nhl_api.PARTNER_COUNTRIES:
-        feed, receipt = nhl_api.partner_odds(country)
-        frames.append(partner.offers(feed))
-        receipts.append(receipt)
+def fetch_offers(
+    slate: date | None = None, wait_minutes: float = 0
+) -> tuple[pd.DataFrame, list[dict]]:
+    """Both partner feeds. The feed keeps serving the previous slate until
+    about noon Eastern, so a run that must price `slate` polls for up to
+    `wait_minutes` and then fails instead of freezing every game as no_offer."""
+    deadline = time.monotonic() + wait_minutes * 60
+    while True:
+        fetched = [nhl_api.partner_odds(c) for c in nhl_api.PARTNER_COUNTRIES]
+        stale = [
+            f"{feed['provider']} {feed['odds_date']}"
+            for feed, _ in fetched
+            if slate is not None and feed["odds_date"] != str(slate)
+        ]
+        if not stale:
+            break
+        if time.monotonic() >= deadline:
+            raise ValueError(
+                f"Partner feed is not on the {slate} slate: {', '.join(stale)}"
+            )
+        time.sleep(ODDS_POLL_SECONDS)
+    frames = [partner.offers(feed) for feed, _ in fetched]
+    receipts = [receipt for _, receipt in fetched]
     return pd.concat(frames, ignore_index=True), receipts
 
 
@@ -113,7 +132,9 @@ def run_backtest() -> pd.DataFrame:
     return frame
 
 
-def daily(day: date, engine=None, force_download: bool = False) -> dict:
+def daily(
+    day: date, engine=None, force_download: bool = False, odds_wait_minutes: float = 0
+) -> dict:
     """Everything the morning run does, in order, then one publish. The
     forecast and decision time is taken after every source has been read so
     each receipt precedes the decision it supports."""
@@ -121,7 +142,10 @@ def daily(day: date, engine=None, force_download: bool = False) -> dict:
     teams, receipts["standings"] = load_teams(day)
     schedule, receipts["schedule"] = fetch_schedule(day)
     finals, observation, receipts["scores"] = fetch_results(day, teams)
-    offers, odds_receipts = fetch_offers()
+    # Only a live run with games today depends on the feed's slate; a rerun of
+    # a past day or an off day still grades and publishes ratings.
+    live_slate = day == site_today() and any(r["game_date"] == day for r in schedule)
+    offers, odds_receipts = fetch_offers(day if live_slate else None, odds_wait_minutes)
     offers, quote_verification = verification.verify(offers, schedule)
     # A manifest preserves both provider receipts under the ledger's single
     # odds source, regardless of which provider supplies the chosen offer.
