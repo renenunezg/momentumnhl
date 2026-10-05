@@ -171,6 +171,7 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
     ratings, projections, decisions = replay.forecast(
         tmp_path / "receipts/sources" / (retained["sha256"] + ".gz")
     )
+    assert projections[["home_fair_price", "away_fair_price"]].iloc[0].eq(100).all()
     for frame, kind in (
         (ratings, "ratings"),
         (projections, "projections"),

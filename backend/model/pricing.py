@@ -9,7 +9,9 @@ def american_to_decimal(price: float) -> float:
 
 def decimal_to_american(decimal: float) -> int:
     american = (decimal - 1) * 100 if decimal >= 2 else -100 / (decimal - 1)
-    return int(round(american))
+    rounded = int(round(american))
+    # Both signs mean even money; use one representation across replay roundoff.
+    return 100 if rounded == -100 else rounded
 
 
 def profit_per_unit(price: float) -> float:
