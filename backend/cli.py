@@ -33,6 +33,17 @@ def main() -> None:
     )
     goalie_ingest.add_argument("--seasons", nargs="+", type=int, required=True)
     sub.add_parser("fit-goal-map", help="refit the goal map on the configured seasons")
+    sub.add_parser(
+        "ingest-play-by-play", help="cache play-by-play for every backtest game"
+    )
+    sub.add_parser("ingame-backtest", help="chronological in-game win probability")
+    live = sub.add_parser(
+        "live-win-probability", help="score the games in progress; read only by default"
+    )
+    live.add_argument("--watch", action="store_true")
+    live.add_argument("--interval", type=int, default=30)
+    live.add_argument("--duration", type=int)
+    live.add_argument("--publish", action="store_true")
     for name, help_text in (
         ("ratings", "print today's ratings"),
         ("project", "print projections for the next week"),
@@ -104,6 +115,48 @@ def main() -> None:
 
         frame = goalies.load(args.seasons, download=True)
         print(json.dumps({"rows": len(frame), "games": frame.game_id.nunique()}))
+    elif args.command == "ingest-play-by-play":
+        from backend.etl import play_by_play, store
+
+        games = store.read_processed("backtest.parquet", columns=["game_id", "season"])
+        print(json.dumps(play_by_play.ingest(games)))
+    elif args.command == "ingame-backtest":
+        from backend import ingame_backtest
+
+        report = ingame_backtest.run()
+        print(json.dumps({k: report[k] for k in ("data", "selection", "chosen")}))
+    elif args.command == "live-win-probability":
+        import logging
+        import sys
+        from datetime import UTC, datetime, timedelta
+
+        from backend import live_publish
+        from backend.db import writes_allowed
+        from backend.etl import live_feed
+        from backend.model import ingame
+
+        if args.interval < 30:
+            raise SystemExit("--interval must be at least 30 seconds")
+        if args.duration is not None and (args.duration <= 0 or not args.watch):
+            raise SystemExit("--duration requires --watch and a positive length")
+        if args.publish and not writes_allowed():
+            raise SystemExit("publication requires MOMENTUMNHL_DB_WRITES=1")
+        logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
+        publisher = live_publish.LivePublisher(
+            ingame.load(),
+            load_games=live_publish.load_games,
+            load_saved=live_publish.load_saved,
+            fetch_states=live_feed.fetch_states,
+            write=live_publish.write_snapshots if args.publish else None,
+            expires_at=(
+                datetime.now(UTC) + timedelta(seconds=args.duration)
+                if args.duration
+                else None
+            ),
+        )
+        live_publish.run(
+            publisher, watch=args.watch, interval=args.interval, duration=args.duration
+        )
     elif args.command == "ingest":
         from backend.etl import moneypuck
 

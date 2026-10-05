@@ -55,6 +55,22 @@ It selects weights on earlier seasons and requires timestamped, fresh, two-sided
 Decision-time and closing quotes remain separate; closing prices cannot revise morning forecasts.
 Historical quote coverage is currently insufficient to establish whether blending reduces MAE.
 
+## Live win probability
+
+`nhl-ingame-v1` turns the score, clock and manpower into a home win probability while a game is played.
+The score margin is a Markov chain whose scoring rates are each side's pregame expected goals times league multipliers for the score state and time left; power plays and empty nets are played out on top with their own multipliers.
+Regulation ties are an even split, as in the pregame model.
+Multipliers were fitted on 2022-23 and 2023-24, manpower handling was kept on 2024-25 log loss, and 2025-26 scored the frozen choice: log loss 0.514 over 1,312 games against 0.516 for score and time alone.
+The published multipliers in `backend/data_static/ingame_model.json` are that holdout fit (2022-23 through 2024-25).
+
+The anchor is the published pregame forecast, so its overconfidence carries into the early game.
+Compressing the pregame goal ratio by a factor fitted on earlier seasons lowered 2025-26 in-game log loss by 0.006 (95% interval 0.003 to 0.010); that is a pregame calibration question and is not applied here.
+Stacked penalties are dated from the latest one, and nothing has been compared with a live market.
+
+`live-win-probability` reads the NHL score feed once per poll for the slate, scores every game inside its puck-drop window against the forecast `nhl.game_projections` froze, and writes `nhl.live_win_probability`.
+It never writes a pregame table, is read only unless `--publish` is passed, and exits when no game is left to watch.
+A Supabase pg_cron job (`ops/install_live_cron.sql`) dispatches the `live win probability` workflow every five minutes only while a started game has no terminal row and no worker is alive.
+
 ## Data sources
 
 - [MoneyPuck](https://moneypuck.com/data.htm) team game-by-game CSV, including xGoals: about 126 MB, downloaded once per run and cached by season under `backend/data/raw/moneypuck/`.
@@ -90,6 +106,9 @@ poetry run python -m backend odds
 poetry run python -m backend verify-quotes
 poetry run python -m backend daily --no-publish
 poetry run python -m backend backtest
+poetry run python -m backend ingest-play-by-play
+poetry run python -m backend ingame-backtest
+poetry run python -m backend live-win-probability
 poetry run python -m backend ingest-goalies --seasons 2021 2022 2023 2024 2025
 poetry run python -m backend validate --output /tmp/nhl-validation
 poetry run python -m backend candidate --selection backend/data_static/candidate_model.json
@@ -110,7 +129,7 @@ A successful cron SQL statement does not prove that GitHub accepted the HTTP dis
 ## Schema
 
 The ordered `sql/*.sql` migrations are the frontend contract.
-They define teams, ratings, projections, immutable pregame snapshots, market snapshots, official results, backtest predictions, recommendations, and reporting views/functions.
+They define teams, ratings, projections, immutable pregame snapshots, market snapshots, official results, backtest predictions, recommendations, live win probability snapshots, and reporting views/functions.
 Research outputs and starter inputs do not alter this schema.
 
 ## Remaining work

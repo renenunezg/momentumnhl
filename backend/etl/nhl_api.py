@@ -122,6 +122,30 @@ def club_season(team_abbr: str, season: int) -> tuple[list[dict], dict]:
     return rows, receipt
 
 
+def play_by_play(game_id: str) -> dict:
+    """One game's full event list. No receipt: the backtest fetches thousands
+    of these once and caches the parsed events instead."""
+    response = _session.get(
+        f"{BASE_URL}/gamecenter/{game_id}/play-by-play",
+        headers={"User-Agent": USER_AGENT},
+        timeout=REQUEST_TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def live_scores(day: date) -> list[dict]:
+    """That day's games as the score feed has them right now. No receipt and
+    no retries: the live worker polls this and backs off on its own."""
+    response = requests.get(
+        f"{BASE_URL}/score/{day.isoformat()}",
+        headers={"User-Agent": USER_AGENT},
+        timeout=15,
+    )
+    response.raise_for_status()
+    return response.json().get("games", [])
+
+
 def standings(day: date) -> tuple[pd.DataFrame, dict]:
     """Team identity from the standings table. Before opening night the dated
     table is empty, so the current one (last season's final) stands in."""

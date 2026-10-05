@@ -1,0 +1,38 @@
+name: live win probability
+
+on:
+  # Supabase dispatches around unfinished games only when live publication is
+  # stale or the worker is nearing expiry. One publisher runs at a time.
+  repository_dispatch:
+    types: [nhl-live-win-probability]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Its own group: the morning run must never wait behind a six-hour worker.
+concurrency:
+  group: nhl-live-win-probability
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install poetry
+        run: pipx install poetry
+      - name: Install dependencies
+        run: poetry sync --no-interaction
+      - name: Publish live snapshots
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        # Hand off before the six-hour runner limit; the queued replacement
+        # starts after this worker exits. Idle slates exit early.
+        run: >-
+          poetry run python -m backend live-win-probability --watch --interval 30
+          --duration 20700 --publish
