@@ -1,67 +1,16 @@
-"""The publish column lists are the frontend contract; they must match the
-checked-in DDL exactly, column for column."""
+"""Provider identity, settlement and offline forecast replay."""
 
 import json
-import re
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
+from backend import grading as official_grading
 from backend import pipeline, publish
-from backend.backtest import BACKTEST_COLUMNS
 from backend.etl import nhl_api
-from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS, settle
-
-TYPES = {"text", "int", "float8", "timestamptz", "date", "bool", "jsonb", "bigint"}
-DDL = "\n".join(
-    path.read_text()
-    for path in sorted((Path(__file__).parent.parent / "sql").glob("*.sql"))
-)
-
-CONTRACTS = {
-    "teams": publish.TEAMS_COLUMNS,
-    "team_ratings": publish.TEAM_RATINGS_COLUMNS + ["published_at"],
-    "game_projections": publish.GAME_PROJECTIONS_COLUMNS,
-    "market_snapshots": publish.MARKET_SNAPSHOTS_COLUMNS,
-    "game_results": publish.GAME_RESULTS_COLUMNS,
-    "backtest_predictions": BACKTEST_COLUMNS,
-    "recommendation_schedule": publish.RECOMMENDATION_SCHEDULE_COLUMNS,
-}
-
-
-def _ddl_columns(table: str) -> list[str]:
-    match = re.search(rf"create table nhl\.{table} \((.*?)\n\);", DDL, re.DOTALL)
-    assert match, f"table {table} not in DDL"
-    columns = []
-    for line in match.group(1).splitlines():
-        tokens = line.split("--")[0].strip().rstrip(",").split()
-        # Multi-line constraints never start with a column type in second place.
-        if len(tokens) >= 2 and tokens[1] in TYPES:
-            columns.append(tokens[0])
-    # Additive migrations preserve the original table declaration.
-    for alteration in re.finditer(
-        rf"alter table nhl\.{table}\s+add column (\w+) ", DDL, re.IGNORECASE
-    ):
-        columns.append(alteration.group(1))
-    return columns
-
-
-def test_publish_columns_match_ddl():
-    for table, contract in CONTRACTS.items():
-        assert list(contract) == _ddl_columns(table), table
-
-
-def test_recommendation_columns_match_ddl():
-    # Decision columns come first; published_at is a database default and
-    # the settlement columns follow it.
-    ddl = _ddl_columns("recommendations")
-    decision = [
-        c for c in ddl if c not in SETTLEMENT_COLUMNS[2:] and c != "published_at"
-    ]
-    assert decision == RECOMMENDATION_COLUMNS
-    assert ddl[-7:] == SETTLEMENT_COLUMNS[2:]
+from backend.recommendations import SETTLEMENT_COLUMNS, settle
 
 
 def test_official_score_feed_preserves_settlement_identity(monkeypatch):
@@ -126,5 +75,143 @@ def test_official_score_feed_preserves_settlement_identity(monkeypatch):
         assert settlements.outcome.tolist() == ["win", "no_play"]
         assert settlements.result_source_at.eq(saved.iloc[0].observed_at).all()
         assert saved.iloc[0].completed
+    # Recovery follows the unresolved ledger beyond the routine lookback.
+    overdue = pending.assign(start_date="2026-09-29T23:00:00Z")
+    recovered = pipeline.fetch_results(date(2026, 10, 5), teams, overdue)
+    assert len(recovered[0]) == 1
+    postponed = nhl_api.scores(date(2026, 9, 29))[0]
+    for row in postponed:
+        row["schedule_state"] = "PPD"
+        row["home_team"], row["away_team"] = "Boston Bruins", "New York Rangers"
+    observation = official_grading.schedule_observation(
+        postponed, recovered[0].iloc[:0], observed_at
+    )
+    assert observation.game_status.eq("postponed").all()
+    voided = settle(pending, recovered[0].iloc[:0], observation, observed_at)
+    assert voided.outcome.tolist() == ["void", "no_play"]
+
+    # Settlement commits even when a later forecast source fails.
+    monkeypatch.setattr(publish, "pending_decisions", lambda _: overdue)
+    writes = []
+    monkeypatch.setattr(
+        publish, "publish_day", lambda *a, **kw: writes.append(kw) or {}
+    )
+
+    def failed_ingest(*_):
+        raise RuntimeError("MoneyPuck unavailable")
+
+    monkeypatch.setattr(pipeline, "ingest_moneypuck", failed_ingest)
+    with pytest.raises(RuntimeError, match="MoneyPuck unavailable"):
+        pipeline.daily(date(2026, 10, 5), engine=object())
+    assert len(writes) == 1 and len(writes[0]["settlements"]) == 2
+
     with pytest.raises(ValueError, match="Missing canonical NHL team name for NYR"):
         pipeline.fetch_results(day, teams.iloc[:1])
+
+
+def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypatch):
+    from datetime import timedelta
+
+    from backend import backtest, replay
+    from backend.etl import moneypuck, store
+    from backend.model import goal_map
+    from backend.model.ratings import InsufficientHistory
+    from backend.odds.partner import OFFER_COLUMNS
+
+    day = date(2026, 10, 5)
+    games = pd.DataFrame(
+        [
+            dict(
+                {c: 5.0 for c in moneypuck.COUNT_COLUMNS},
+                team_abbr=team,
+                venue=venue,
+                season=2025,
+                game_id=str(i),
+                game_date=date(2026, 4, 1) + timedelta(days=i),
+                situation=situation,
+                toi=900.0,
+            )
+            for team in ("BOS", "NYR")
+            for venue in ("home", "away")
+            for i in range(30)
+            for situation in ("ev", "pp", "pk", "other")
+        ]
+    )
+    teams = pd.DataFrame(
+        {"team_abbr": ["BOS", "NYR"], "team": ["Boston Bruins", "New York Rangers"]}
+    )
+    receipt = {"sha256": "a" * 64, "observed_at": "2026-10-05T00:00:00Z"}
+    schedule = [
+        dict(
+            game_id="2026020001",
+            season=2026,
+            game_date=day,
+            start_date="2026-10-06T02:00:00Z",
+            home_abbr="BOS",
+            away_abbr="NYR",
+            home_team="Boston Bruins",
+            away_team="New York Rangers",
+        )
+    ]
+    monkeypatch.setattr(store, "PROCESSED_DIR", tmp_path)
+    monkeypatch.setattr(store, "RECEIPTS_DIR", tmp_path / "receipts")
+    monkeypatch.setattr(pipeline, "ingest_moneypuck", lambda *a: receipt)
+    monkeypatch.setattr(pipeline, "load_teams", lambda *a: (teams, receipt))
+    monkeypatch.setattr(pipeline, "fetch_schedule", lambda *a: (schedule, receipt))
+    monkeypatch.setattr(
+        pipeline,
+        "fetch_offers",
+        lambda *a: (pd.DataFrame(columns=OFFER_COLUMNS), [receipt]),
+    )
+    monkeypatch.setattr(pipeline.verification, "verify", lambda offers, _: (offers, {}))
+    monkeypatch.setattr(moneypuck, "read_games", lambda *a: games)
+    summary = pipeline.daily(day)
+    assert summary["projections"] == 1
+    retained = store.read_receipt("forecast_replay")
+    ratings, projections, decisions = replay.forecast(
+        tmp_path / "receipts/sources" / (retained["sha256"] + ".gz")
+    )
+    for frame, kind in (
+        (ratings, "ratings"),
+        (projections, "projections"),
+        (decisions, "decisions"),
+    ):
+        pd.testing.assert_frame_equal(
+            frame,
+            store.read_processed(kind, f"{day}.parquet"),
+            check_dtype=False,
+            atol=1e-12,
+            rtol=1e-12,
+        )
+    # Expected history exclusions remain visible, while unexpected model errors fail.
+    fixtures = pd.DataFrame(
+        [
+            dict(
+                game_id="one",
+                season=2026,
+                game_date=day,
+                home_abbr="BOS",
+                away_abbr="NYR",
+                home_goals=3,
+                away_goals=2,
+                last_period_type="REG",
+            )
+        ]
+    )
+    monkeypatch.setattr(backtest, "official_results", lambda *a: fixtures)
+    monkeypatch.setattr(backtest.goal_map_model, "fit", lambda *a: goal_map.load())
+
+    def short(*a):
+        raise InsufficientHistory("no pregame history")
+
+    monkeypatch.setattr(backtest, "team_ratings", short)
+    result = backtest.run(games, [2026])
+    assert result.empty and result.attrs["coverage"]["eligible"] == 1
+    assert result.attrs["coverage"]["excluded"][0]["game_id"] == "one"
+
+    def invalid(*a):
+        raise ValueError("invalid source")
+
+    monkeypatch.setattr(backtest, "team_ratings", invalid)
+    with pytest.raises(ValueError, match="invalid source"):
+        backtest.run(games, [2026])

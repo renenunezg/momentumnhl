@@ -8,7 +8,12 @@ from backend.model.poisson import matchup, total_probabilities
 
 def test_matchup_matches_hand_built_grid():
     # Opening-night Carolina rates lost 1.1% probability with the old grid.
-    for home_lambda, away_lambda in ((4.825887, 2.831421), (12.0, 9.0), (0, 0)):
+    for home_lambda, away_lambda in (
+        (4.825887, 2.831421),
+        (12.0, 9.0),
+        (2.8, 2.8),
+        (0, 0),
+    ):
         result = matchup(home_lambda, away_lambda)
         expected = (
             skellam.sf(0, home_lambda, away_lambda)
@@ -21,11 +26,6 @@ def test_matchup_matches_hand_built_grid():
         assert result["grid_mass"] == pytest.approx(1)
     with pytest.raises(ValueError):
         matchup(float("nan"), 3)
-
-
-def test_equal_lambdas_are_a_coin_flip():
-    result = matchup(2.8, 2.8)
-    assert result["home_win_prob"] == pytest.approx(result["away_win_prob"])
 
 
 def test_total_probabilities_push_only_on_integer_lines():

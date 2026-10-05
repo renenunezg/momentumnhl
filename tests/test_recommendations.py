@@ -67,6 +67,9 @@ def test_moneyline_needs_thirteen_points_over_the_book():
     assert h2h["status"] == "recommended"
     assert h2h["provider"] == "FanDuel" and h2h["price"] == 105
     assert h2h["probability_edge"] == pytest.approx(0.62 - 100 / 205, abs=1e-9)
+    assert h2h["expected_value_per_unit"] == pytest.approx(0.271)
+    assert h2h["kelly_fraction"] == pytest.approx(0.0258095238)
+    assert h2h["minimum_price"] == -129
     assert h2h["stake_units"] == 1.0
     totals = decisions[decisions["market"].eq("totals")].iloc[0]
     assert totals["status"] == "no_play" and totals["reason"] == "no_offer"

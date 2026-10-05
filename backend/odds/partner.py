@@ -1,5 +1,5 @@
 """Partner sportsbook feeds turned into one offer per (game, provider, market,
-side). The feed carries a single timestamp for the slate, so every offer from
+side, point). The feed carries a single timestamp for the slate, so every offer from
 one fetch shares provider_last_update."""
 
 import pandas as pd
@@ -78,9 +78,9 @@ def offers(feed: dict) -> pd.DataFrame:
                     }
                 )
     frame = pd.DataFrame(rows, columns=OFFER_COLUMNS)
-    # A totals line is one number per game; keep the over and under from the
-    # same posted line only.
-    return frame.drop_duplicates(["game_id", "provider_key", "market", "side"])
+    return frame.drop_duplicates(
+        ["game_id", "provider_key", "market", "side", "point", "price"]
+    )
 
 
 def market_snapshot(all_offers: pd.DataFrame) -> pd.DataFrame:
@@ -88,6 +88,20 @@ def market_snapshot(all_offers: pd.DataFrame) -> pd.DataFrame:
     rows = []
     keys = ["game_id", "provider_key", "fetched_at"]
     for (game_id, provider_key, fetched_at), group in all_offers.groupby(keys):
+        # The archive exposes one line per market. Ambiguous or unmatched pairs
+        # cannot be represented without attaching a price to the wrong line.
+        for market, first, second in (
+            ("totals", "over", "under"),
+            ("puck", "home", "away"),
+        ):
+            subset = group[group.market.eq(market)]
+            a, b = subset[subset.side.eq(first)], subset[subset.side.eq(second)]
+            valid = len(a) == len(b) == 1 and (
+                a.iloc[0].point
+                == (b.iloc[0].point if market == "totals" else -b.iloc[0].point)
+            )
+            if not valid:
+                group = group[~group.market.eq(market)]
 
         def price(market, side):
             hit = group[group["market"].eq(market) & group["side"].eq(side)]

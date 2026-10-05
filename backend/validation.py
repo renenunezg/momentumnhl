@@ -56,7 +56,7 @@ def compare(frame, baseline, iterations=2000):
     paired = frame.merge(
         baseline, on="game_id", suffixes=("", "_base"), validate="one_to_one"
     )
-    if len(paired) != len(frame):
+    if len(paired) != len(frame) or len(paired) != len(baseline):
         raise ValueError("Baseline coverage does not match candidate coverage")
     y = (paired.home_goals > paired.away_goals).astype(float).to_numpy()
     p = paired.home_win_prob.to_numpy().clip(1e-6, 1 - 1e-6)
@@ -193,6 +193,17 @@ def run(output: Path, *, include_goalies: bool = True) -> dict:
         "development": development,
         "holdout_ablations": holdouts,
         "coverage": fixtures.groupby("season").size().to_dict(),
+        "original_coverage": original.attrs.get("coverage"),
+        "candidate_coverage": {
+            name: {
+                "evaluated": len(frame),
+                "missing_game_ids": sorted(set(fixtures.game_id) - set(frame.game_id)),
+                "unexpected_game_ids": sorted(
+                    set(frame.game_id) - set(fixtures.game_id)
+                ),
+            }
+            for name, frame in predictions.items()
+        },
         "caveats": [
             "2025 was inspected before this experiment, not pristine.",
             "Historical xG may have been retrospectively revised.",

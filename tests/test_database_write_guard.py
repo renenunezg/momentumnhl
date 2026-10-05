@@ -1,55 +1,48 @@
-"""The production write gate blocks writes unless CI or a human opts in."""
-
-from __future__ import annotations
+"""Production connection permissions, including the first and reused transaction."""
 
 import os
 
+import pytest
 from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import DBAPIError
 
 from backend import db
-from backend.db import _is_write_statement, writes_allowed
 
 
-def test_writes_allowed_logic(monkeypatch):
-    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
-    monkeypatch.delenv("MOMENTUMNHL_DB_WRITES", raising=False)
-    assert writes_allowed() is False
-    monkeypatch.setenv("MOMENTUMNHL_DB_WRITES", "1")
-    assert writes_allowed() is True
-    monkeypatch.delenv("MOMENTUMNHL_DB_WRITES", raising=False)
-    monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    assert writes_allowed() is True
-    if os.getenv("DATABASE_URL"):
-        monkeypatch.setenv("GITHUB_ACTIONS", "false")
+def test_connection_enforces_write_authorization(monkeypatch):
+    value = os.getenv("NHL_TEST_DATABASE_URL")
+    if not value:
+        pytest.skip("requires disposable local PostgreSQL")
+    assert make_url(value).host in ("127.0.0.1", "localhost")
+    monkeypatch.setenv("DATABASE_URL", value)
+    for human, ci, allowed in (
+        ("0", "false", False),
+        ("1", "false", True),
+        ("0", "true", True),
+    ):
+        monkeypatch.setenv("MOMENTUMNHL_DB_WRITES", human)
+        monkeypatch.setenv("GITHUB_ACTIONS", ci)
         monkeypatch.setattr(db, "_engine", None)
         engine = db.engine
         try:
-            # The first transaction and a reused connection must both be
-            # read-only; SET inside a transaction missed the first one.
+            # A comment bypasses the fast SQL-prefix check; PostgreSQL must
+            # enforce permissions before the first transaction and after reuse.
             for _ in range(2):
                 with engine.connect() as conn:
-                    read_only = conn.execute(
-                        text("show transaction_read_only")
-                    ).scalar()
-                    assert read_only == "on"
+                    transaction = conn.begin()
+                    try:
+                        assert conn.execute(text("SELECT 1")).scalar_one() == 1
+                        statement = text(
+                            "/* acceptance */ CREATE TABLE "
+                            "public.nhl_write_guard_acceptance (id int)"
+                        )
+                        if allowed:
+                            conn.execute(statement)
+                        else:
+                            with pytest.raises(DBAPIError, match="read-only"):
+                                conn.execute(statement)
+                    finally:
+                        transaction.rollback()
         finally:
             engine.dispose()
-
-
-def test_is_write_statement():
-    for w in (
-        "INSERT INTO x VALUES (1)",
-        "  \n  UPDATE x SET a=1",
-        "DELETE FROM x",
-        "TRUNCATE TABLE x",
-        "drop table x",
-        "ALTER TABLE x ADD c INT",
-    ):
-        assert _is_write_statement(w) is True, w
-    for r in (
-        "SELECT * FROM x",
-        "  WITH c AS (SELECT 1) SELECT * FROM c",
-        "BEGIN",
-        "COMMIT",
-    ):
-        assert _is_write_statement(r) is False, r

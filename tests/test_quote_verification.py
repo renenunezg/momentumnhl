@@ -118,10 +118,35 @@ def quote_case(monkeypatch, tmp_path):
 
 
 def test_live_listing_to_decision_fails_closed(quote_case):
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures/contracts/v1/nhl-quote.json").read_text()
+    )
+    assert fixture["version"] == 1
+    projection = SimpleNamespace(**fixture["forecast"])
+    snapshot = fixture["snapshot"]
+    for evidence in snapshot["quote_verifications"].values():
+        offer = SimpleNamespace(
+            **{
+                **evidence,
+                "fetched_at": snapshot["fetched_at"],
+                "provider_start_date": projection.start_date,
+            }
+        )
+        assert verification.valid(evidence, offer, projection, projection.as_of)
+        for mutation in fixture["rejected_evidence"]:
+            assert not verification.valid(
+                {**evidence, **mutation}, offer, projection, projection.as_of
+            )
     c = quote_case
     checked, report = verification.verify(c.offers, [c.game])
     assert report["verified"] == 4 and len(c.calls) == 1
     snapshot = partner.market_snapshot(checked).iloc[0]
+    mismatched = checked.copy()
+    mismatched.loc[mismatched.side.eq("under"), "point"] += 0.5
+    invalid = partner.market_snapshot(mismatched).iloc[0]
+    assert pd.isna(invalid.total_line)
+    assert pd.isna(invalid.over_price) and pd.isna(invalid.under_price)
+    assert not any(k.startswith("totals_") for k in invalid.quote_verifications)
     assert set(snapshot.quote_verifications) == {
         "h2h_home",
         "h2h_away",
@@ -264,6 +289,27 @@ def test_database_enforces_publication_evidence(quote_case):
     engine = create_engine(url)
     with engine.connect() as conn:
         transaction = conn.begin()
+        from sqlalchemy import inspect
+
+        from backend.backtest import BACKTEST_COLUMNS
+        from backend.recommendations import SETTLEMENT_COLUMNS
+
+        contracts = {
+            "recommendations": RECOMMENDATION_COLUMNS + SETTLEMENT_COLUMNS[2:],
+            "teams": publish.TEAMS_COLUMNS,
+            "team_ratings": publish.TEAM_RATINGS_COLUMNS + ["published_at"],
+            "game_projections": publish.GAME_PROJECTIONS_COLUMNS,
+            "market_snapshots": publish.MARKET_SNAPSHOTS_COLUMNS,
+            "game_results": publish.GAME_RESULTS_COLUMNS,
+            "backtest_predictions": BACKTEST_COLUMNS,
+            "recommendation_schedule": publish.RECOMMENDATION_SCHEDULE_COLUMNS,
+        }
+        inspector = inspect(conn)
+        for table, columns in contracts.items():
+            stored = {
+                column["name"] for column in inspector.get_columns(table, schema="nhl")
+            }
+            assert set(columns) <= stored, table
         target = Table("recommendations", MetaData(), schema="nhl", autoload_with=conn)
         snapshots = partner.market_snapshot(checked)
         publish._insert_ignore(
@@ -276,6 +322,25 @@ def test_database_enforces_publication_evidence(quote_case):
             text("select quote_verifications from nhl.market_snapshots")
         ).scalar_one()
         assert len(archived) == 4 and archived["h2h_away"]["price"] == 110
+        conn.execute(
+            text("""INSERT INTO nhl.market_snapshots
+            (game_id, provider_key, fetched_at, home_price)
+            SELECT :game, 'draftkings',
+              CAST(:cutoff AS timestamptz) + n * interval '1 second', 999
+            FROM generate_series(1, 10001) n"""),
+            {"game": c.game["game_id"], "cutoff": c.now},
+        )
+        latest = (
+            conn.execute(
+                text("""SELECT * FROM nhl.latest_market_snapshots(
+            ARRAY[:game], jsonb_build_object(:game, CAST(:cutoff AS text)))"""),
+                {"game": c.game["game_id"], "cutoff": c.now},
+            )
+            .mappings()
+            .all()
+        )
+        assert len(latest) == 1 and latest[0]["home_price"] == -130
+        assert latest[0]["quote_verifications"] == archived
         for row in records:
             for field, value in (
                 ("sha256", "bad"),
@@ -304,5 +369,49 @@ def test_database_enforces_publication_evidence(quote_case):
             conn.execute(
                 text("update nhl.recommendations set data_flags = '{}'::jsonb")
             )
+        # Real provider observation -> normalized PPD -> SQL-backed void.
+        from backend import grading
+        from backend.recommendations import settle
+
+        observed = datetime.now(UTC)
+        score_rows = [
+            {
+                "game_id": c.game["game_id"],
+                "season": 2026,
+                "start_date": c.start.isoformat(),
+                "home_team": c.game["home_team"],
+                "away_team": c.game["away_team"],
+                "schedule_state": "PPD",
+                "game_state": "FUT",
+            }
+        ]
+        empty = pd.DataFrame(columns=["game_id"])
+        observation = grading.schedule_observation(score_rows, empty, observed)
+        publish._upsert(
+            publish._prepare(observation, publish.RECOMMENDATION_SCHEDULE_COLUMNS),
+            "recommendation_schedule",
+            conn,
+            ["game_id"],
+        )
+        settlements = publish._prepare(
+            settle(decisions, empty, observation, datetime.now(UTC)),
+            publish.SETTLEMENT_COLUMNS,
+        )
+        for row in settlements.to_dict("records"):
+            conn.execute(
+                target.update()
+                .where(target.c.game_id == row["game_id"])
+                .where(target.c.market == row["market"])
+                .values(
+                    {
+                        key: value
+                        for key, value in row.items()
+                        if key not in ("game_id", "market")
+                    }
+                )
+            )
+        assert conn.execute(
+            text("select outcome from nhl.recommendations")
+        ).scalars().all() == ["void", "void"]
         transaction.rollback()
     engine.dispose()

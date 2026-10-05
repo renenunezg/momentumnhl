@@ -1,6 +1,6 @@
 # The morning run: MoneyPuck windows, ratings, projections for the next week,
 # partner-book prices, frozen decisions for today's slate, and grading of the
-# last few days. Runs every day; an off-season day publishes ratings only.
+# unresolved ledger. Runs every day; an off-season day publishes ratings only.
 name: daily
 on:
   # Supabase pg_cron: nhl-daily-dispatch, daily at 16:15 UTC from the day
@@ -53,6 +53,8 @@ jobs:
           path: |
             backend/data/processed/receipts
             backend/data/processed/decisions
+            backend/data/processed/ratings
+            backend/data/processed/projections
             backend/data/raw/quote_verification
           retention-days: 90
           if-no-files-found: ignore

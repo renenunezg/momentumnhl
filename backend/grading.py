@@ -85,9 +85,17 @@ def schedule_observation(
                 "start_date": game["start_date"],
                 "home_team": game["home_team"],
                 "away_team": game["away_team"],
-                "game_status": str(game["schedule_state"] or game["game_state"]).lower()
-                if game["schedule_state"] not in (None, "OK")
-                else str(game["game_state"]).lower(),
+                "game_status": {
+                    "ppd": "postponed",
+                    "canceled": "cancelled",
+                }.get(
+                    status := str(
+                        game["schedule_state"]
+                        if game["schedule_state"] not in (None, "OK")
+                        else game["game_state"]
+                    ).lower(),
+                    status,
+                ),
                 "completed": done,
                 "home_goals": int(by_id.at[game["game_id"], "home_goals"])
                 if done

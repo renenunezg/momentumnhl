@@ -1,9 +1,14 @@
 """The daily run: ingest, grade, rate, project, price, decide, publish. Each
 stage is also a CLI command so a piece can be rerun on its own."""
 
+import hashlib
 import json
+import os
+import platform
 import time
 from datetime import UTC, date, datetime, timedelta
+from importlib.metadata import version
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -16,9 +21,10 @@ from backend.config import (
     STATIC_DIR,
 )
 from backend.etl import moneypuck, nhl_api, store
+from backend.features.windows import venue_windows
 from backend.model import goal_map
 from backend.model.projections import project_games
-from backend.model.ratings import season_of, team_ratings
+from backend.model.ratings import ratings_from_windows, season_of
 from backend.odds import partner, verification
 
 SCHEDULE_DAYS = 7
@@ -66,15 +72,21 @@ def fetch_schedule(day: date) -> tuple[list[dict], dict]:
 
 
 def fetch_results(
-    day: date, teams: pd.DataFrame | None = None
+    day: date, teams: pd.DataFrame | None = None, pending: pd.DataFrame | None = None
 ) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
-    """Finals and fixture observations for the last few days including today."""
+    """Recent results plus every unresolved decision date, fetched once per day."""
     if teams is None:
         teams, _ = nhl_api.standings(day)
     names = teams.set_index("team_abbr")["team"].to_dict()
     score_rows, receipt = [], None
-    for offset in range(RESULT_LOOKBACK_DAYS, -1, -1):
-        rows, receipt = nhl_api.scores(day - timedelta(days=offset))
+    dates = {day - timedelta(days=n) for n in range(RESULT_LOOKBACK_DAYS + 1)}
+    if pending is not None and not pending.empty:
+        starts = pd.to_datetime(pending["start_date"], utc=True, errors="raise")
+        dates.update(
+            d for d in starts.dt.tz_convert(SITE_TIME_ZONE).dt.date if d <= day
+        )
+    for result_day in sorted(dates):
+        rows, receipt = nhl_api.scores(result_day)
         # The score endpoint has nicknames, unlike the schedule's full names.
         # Resolve identities by abbreviation before the settlement name check.
         for row in rows:
@@ -85,15 +97,45 @@ def fetch_results(
                     raise ValueError(f"Missing canonical NHL team name for {abbr}")
                 row[f"{side}_team"] = name
         score_rows.extend(rows)
+    score_rows = list({row["game_id"]: row for row in score_rows}.values())
     fetched_at = receipt["observed_at"]
     finals = grading.results(score_rows, fetched_at)
     observation = grading.schedule_observation(score_rows, finals, fetched_at)
     return finals, observation, receipt
 
 
+def grade_pending(day: date, engine) -> dict:
+    """Commit official settlements independently of pregame source availability."""
+    from backend import publish
+
+    pending = publish.pending_decisions(engine)
+    finals, observation, receipt = fetch_results(day, pending=pending)
+    settlements = recommendations.settle(
+        pending, finals, observation, receipt["observed_at"]
+    )
+    counts = publish.publish_day(
+        engine,
+        day,
+        results=finals,
+        schedule_observation=observation,
+        settlements=settlements,
+    )
+    return {
+        **counts,
+        "pending_before": len(pending),
+        "unresolved": len(pending) - len(settlements),
+    }
+
+
 def build_ratings(day: date, teams: pd.DataFrame):
     games = moneypuck.read_games(_seasons(day))
-    ratings, league = team_ratings(games, day, goal_map.load())
+    windows = venue_windows(games[games.season.ge(season_of(day) - 1)], day)
+    coefficients = goal_map.load()
+    ratings, league = ratings_from_windows(windows, day, coefficients)
+    ratings.attrs["replay_windows"] = windows.to_json(
+        orient="table", date_format="iso", double_precision=15
+    )
+    ratings.attrs["goal_map"] = coefficients
     names = dict(zip(teams["team_abbr"], teams["team"]))
     ratings["team"] = ratings["team_abbr"].map(names).fillna(ratings["team_abbr"])
     return ratings, league
@@ -135,13 +177,11 @@ def run_backtest() -> pd.DataFrame:
 def daily(
     day: date, engine=None, force_download: bool = False, odds_wait_minutes: float = 0
 ) -> dict:
-    """Everything the morning run does, in order, then one publish. The
-    forecast and decision time is taken after every source has been read so
-    each receipt precedes the decision it supports."""
+    """Settle first, then publish the pregame forecast and decisions atomically."""
+    graded = grade_pending(day, engine) if engine is not None else None
     receipts = {"moneypuck": ingest_moneypuck(day, force_download)}
     teams, receipts["standings"] = load_teams(day)
     schedule, receipts["schedule"] = fetch_schedule(day)
-    finals, observation, receipts["scores"] = fetch_results(day, teams)
     # Only a live run with games today depends on the feed's slate; a rerun of
     # a past day or an off day still grades and publishes ratings.
     live_slate = day == site_today() and any(r["game_date"] == day for r in schedule)
@@ -165,6 +205,47 @@ def daily(
         for key in ("moneypuck", "schedule", "odds")
     }
     decisions = recommendations.decide(today, offers, decision_receipts, as_of)
+    # Compact sufficient inputs preserve the exact daily model without retaining
+    # the full multi-season MoneyPuck download on every run.
+    store.receipt(
+        "forecast_replay",
+        json.dumps(
+            {
+                "version": 1,
+                "code_revision": os.getenv("GITHUB_SHA"),
+                "source_hashes": {
+                    str(path.relative_to(Path(__file__).parent)): hashlib.sha256(
+                        path.read_bytes()
+                    ).hexdigest()
+                    for path in sorted(Path(__file__).parent.rglob("*.py"))
+                    if "data" not in path.relative_to(Path(__file__).parent).parts
+                },
+                "runtime": {
+                    "python": platform.python_version(),
+                    **{
+                        package: version(package)
+                        for package in ("numpy", "pandas", "scipy")
+                    },
+                },
+                "as_of": as_of,
+                "day": str(day),
+                "model_version": str(ratings.model_version.iloc[0]),
+                "windows": ratings.attrs["replay_windows"],
+                "goal_map": ratings.attrs["goal_map"],
+                "teams": teams.to_json(
+                    orient="table", date_format="iso", double_precision=15
+                ),
+                "schedule": json.loads(json.dumps(schedule, default=str)),
+                "offers": offers.to_json(
+                    orient="table", date_format="iso", double_precision=15
+                ),
+                "receipts": decision_receipts,
+            },
+            sort_keys=True,
+            allow_nan=False,
+        ).encode(),
+    )
+    ratings.attrs.clear()
     store.write_processed(ratings, "ratings", f"{day}.parquet")
     store.write_processed(projections, "projections", f"{day}.parquet")
     store.write_processed(decisions, "decisions", f"{day}.parquet")
@@ -176,7 +257,7 @@ def daily(
         "projections": len(projections),
         "today": len(today),
         "offers": len(offers),
-        "finals": len(finals),
+        "grading": graded,
         "recommended": int(decisions["status"].eq("recommended").sum()),
         "no_play": int(decisions["status"].eq("no_play").sum()),
         "quote_verification": quote_verification,
@@ -185,8 +266,6 @@ def daily(
         return summary
     from backend import publish
 
-    pending = publish.pending_decisions(engine)
-    settlements = recommendations.settle(pending, finals, observation, as_of)
     summary["published"] = publish.publish_day(
         engine,
         day,
@@ -194,9 +273,6 @@ def daily(
         ratings=ratings,
         projections=projections,
         market_snapshot=snapshot,
-        results=finals,
-        schedule_observation=observation,
         recommendations=decisions,
-        settlements=settlements,
     )
     return summary

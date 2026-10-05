@@ -103,7 +103,7 @@ def ingest(seasons) -> dict:
     for season, rows in frame.groupby("season"):
         if season in wanted:
             store.write_raw(rows, "moneypuck", f"{season}.parquet")
-    return store.receipt("moneypuck", content, fetched_at)
+    return store.receipt("moneypuck", content, fetched_at, archive=False)
 
 
 def read_games(seasons) -> pd.DataFrame:

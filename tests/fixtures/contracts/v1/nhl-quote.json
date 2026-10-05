@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "forecast": {
+    "game_id": "2026020001",
+    "start_date": "2026-09-29T21:00:00Z",
+    "as_of": "2026-09-29T18:08:17Z"
+  },
+  "snapshot": {
+    "game_id": "2026020001",
+    "provider_key": "draftkings",
+    "fetched_at": "2026-09-29T18:08:15Z",
+    "provider_last_update": "2026-08-28T18:00:38Z",
+    "home_price": -130,
+    "away_price": 110,
+    "total_line": 6.5,
+    "over_price": 105,
+    "under_price": -125,
+    "puck_line": -1.5,
+    "home_puck_price": 190,
+    "away_puck_price": -230,
+    "quote_verifications": {
+      "h2h_home": {
+        "method": "draftkings_public_listing_v1",
+        "provider_key": "draftkings",
+        "source_url": "https://dknetwork.draftkings.com/draftkings-sportsbook-betting-splits/?tb_edate=n7days&tb_eg=42133&tb_emt=0",
+        "game_id": "2026020001",
+        "start_date": "2026-09-29T21:00:00Z",
+        "source_start_date": "2026-09-29T21:10:00Z",
+        "observed_at": "2026-09-29T18:08:16Z",
+        "response_date": "2026-09-29T18:08:16Z",
+        "response_age_seconds": 0,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_event_id": "123",
+        "market": "h2h",
+        "side": "home",
+        "price": -130,
+        "point": null,
+        "source_market_id": "0ML123",
+        "source_selection_id": "0ML123_1"
+      },
+      "h2h_away": {
+        "method": "draftkings_public_listing_v1",
+        "provider_key": "draftkings",
+        "source_url": "https://dknetwork.draftkings.com/draftkings-sportsbook-betting-splits/?tb_edate=n7days&tb_eg=42133&tb_emt=0",
+        "game_id": "2026020001",
+        "start_date": "2026-09-29T21:00:00Z",
+        "source_start_date": "2026-09-29T21:10:00Z",
+        "observed_at": "2026-09-29T18:08:16Z",
+        "response_date": "2026-09-29T18:08:16Z",
+        "response_age_seconds": 0,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_event_id": "123",
+        "market": "h2h",
+        "side": "away",
+        "price": 110,
+        "point": null,
+        "source_market_id": "0ML123",
+        "source_selection_id": "0ML123_3"
+      },
+      "totals_over": {
+        "method": "draftkings_public_listing_v1",
+        "provider_key": "draftkings",
+        "source_url": "https://dknetwork.draftkings.com/draftkings-sportsbook-betting-splits/?tb_edate=n7days&tb_eg=42133&tb_emt=0",
+        "game_id": "2026020001",
+        "start_date": "2026-09-29T21:00:00Z",
+        "source_start_date": "2026-09-29T21:10:00Z",
+        "observed_at": "2026-09-29T18:08:16Z",
+        "response_date": "2026-09-29T18:08:16Z",
+        "response_age_seconds": 0,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_event_id": "123",
+        "market": "totals",
+        "side": "over",
+        "price": 105,
+        "point": 6.5,
+        "source_market_id": "0OU123",
+        "source_selection_id": "0OU123O650_1"
+      },
+      "totals_under": {
+        "method": "draftkings_public_listing_v1",
+        "provider_key": "draftkings",
+        "source_url": "https://dknetwork.draftkings.com/draftkings-sportsbook-betting-splits/?tb_edate=n7days&tb_eg=42133&tb_emt=0",
+        "game_id": "2026020001",
+        "start_date": "2026-09-29T21:00:00Z",
+        "source_start_date": "2026-09-29T21:10:00Z",
+        "observed_at": "2026-09-29T18:08:16Z",
+        "response_date": "2026-09-29T18:08:16Z",
+        "response_age_seconds": 0,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "source_event_id": "123",
+        "market": "totals",
+        "side": "under",
+        "price": -125,
+        "point": 6.5,
+        "source_market_id": "0OU123",
+        "source_selection_id": "0OU123U650_3"
+      }
+    }
+  },
+  "rejected_evidence": [
+    {
+      "price": 120
+    },
+    {
+      "point": 5.5
+    },
+    {
+      "game_id": "wrong"
+    },
+    {
+      "source_selection_id": "1ML123_1"
+    },
+    {
+      "sha256": "bad"
+    },
+    {
+      "observed_at": "2026-09-29T18:09:00Z"
+    }
+  ]
+}

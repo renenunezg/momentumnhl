@@ -1,5 +1,6 @@
 """Parquet store under backend/data plus source receipts every stage shares."""
 
+import gzip
 import hashlib
 import json
 import os
@@ -43,9 +44,14 @@ def read_processed(*parts: str, columns: list[str] | None = None) -> pd.DataFram
     return pd.read_parquet(PROCESSED_DIR.joinpath(*parts), columns=columns)
 
 
-def receipt(name: str, content: bytes, observed_at: datetime | None = None) -> dict:
-    """Hash and timestamp of a fetched source, kept on disk so a decision can
-    carry the exact inputs it was made from."""
+def receipt(
+    name: str,
+    content: bytes,
+    observed_at: datetime | None = None,
+    *,
+    archive: bool = True,
+) -> dict:
+    """Identify each fetch and retain compact source bodies for replay."""
     observed = (observed_at or datetime.now(UTC)).astimezone(UTC)
     record = {
         "name": name,
@@ -54,6 +60,16 @@ def receipt(name: str, content: bytes, observed_at: datetime | None = None) -> d
         "bytes": len(content),
     }
     RECEIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    if archive:
+        target = RECEIPTS_DIR / "sources" / (record["sha256"] + ".gz")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if not target.exists():
+            target.write_bytes(gzip.compress(content, mtime=0))
+    record["body_archived"] = archive
+    history = RECEIPTS_DIR / "history"
+    history.mkdir(exist_ok=True)
+    identity = hashlib.sha256(json.dumps(record, sort_keys=True).encode()).hexdigest()
+    (history / f"{identity}.json").write_text(json.dumps(record, indent=1))
     (RECEIPTS_DIR / f"{name}.json").write_text(json.dumps(record, indent=1))
     return record
 

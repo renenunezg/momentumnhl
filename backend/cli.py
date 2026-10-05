@@ -220,23 +220,9 @@ def main() -> None:
         summary = pipeline.daily(_day(args.date))
         print(json.dumps(summary, indent=1))
     elif args.command == "grade":
-        from backend import pipeline, publish, recommendations
+        from backend import pipeline
 
-        engine = _engine()
-        day = _day(None)
-        finals, observation, receipt = pipeline.fetch_results(day)
-        pending = publish.pending_decisions(engine)
-        settlements = recommendations.settle(
-            pending, finals, observation, receipt["observed_at"]
-        )
-        counts = publish.publish_day(
-            engine,
-            day,
-            results=finals,
-            schedule_observation=observation,
-            settlements=settlements,
-        )
-        print(json.dumps(counts))
+        print(json.dumps(pipeline.grade_pending(_day(None), _engine())))
     elif args.command == "backtest":
         from backend import backtest, pipeline
 

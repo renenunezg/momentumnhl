@@ -137,3 +137,14 @@ Research outputs and starter inputs do not alter this schema.
 Verify a full published-and-graded production cycle after the repaired dispatch authorization.
 Collect timestamped pregame market and starter evidence before evaluating their incremental value in live conditions.
 Candidate promotion, coherent calibrated bet pricing, period-specific overtime inputs, puck-line pricing and closing-line capture remain separate work.
+
+
+Settlement runs before pregame ingestion and includes dates from every unresolved ledger entry, even outside the routine three-day result window.
+Fresh odds or MoneyPuck failures do not roll back already committed settlements.
+Production workflow artifacts retain compact `forecast_replay` source bodies under `receipts/sources`, with normalized pregame windows, fitted coefficients, schedule, offers, and receipt identities.
+Use `backend.replay.forecast(Path(...))` on the retained gzip body to reconstruct ratings, projections, and decisions offline with the matching source revision.
+The full MoneyPuck download is identified by its digest; replay uses the sufficient normalized windows rather than treating a later download as an earlier vintage.
+Backtest parquet metadata includes eligible and evaluated counts plus excluded game IDs and reasons.
+Unexpected model validation failures propagate instead of silently removing games from reported performance.
+
+The website also requires `sql/005_snapshot_lookup.sql` for its bounded record and snapshot reads.

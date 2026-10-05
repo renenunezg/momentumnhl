@@ -10,7 +10,7 @@ from backend.etl import nhl_api, store
 from backend.etl.nhl_api import FINAL_STATES
 from backend.model import goal_map as goal_map_model
 from backend.model.projections import project_games
-from backend.model.ratings import team_ratings
+from backend.model.ratings import InsufficientHistory, team_ratings
 
 BACKTEST_COLUMNS = [
     "game_id",
@@ -58,7 +58,8 @@ def official_results(games: pd.DataFrame, season: int) -> pd.DataFrame:
 
 
 def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
-    rows = []
+    rows, excluded = [], []
+    eligible = 0
     for season in seasons:
         training_seasons = sorted(
             games.loc[games["season"] < season, "season"].unique()
@@ -67,10 +68,15 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
             raise ValueError(f"No prior seasons to fit the goal map for {season}")
         fitted_map = goal_map_model.fit(games, training_seasons)
         fixtures = official_results(games, season)
+        eligible += len(fixtures)
         for day, slate in fixtures.groupby("game_date"):
             try:
                 ratings, league = team_ratings(games, day, fitted_map)
-            except ValueError:
+            except InsufficientHistory as exc:
+                excluded.extend(
+                    {"game_id": str(g), "date": str(day), "reason": str(exc)}
+                    for g in slate.game_id
+                )
                 continue
             schedule = [
                 {
@@ -86,14 +92,29 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
                 for g in slate.itertuples(index=False)
             ]
             projected = project_games(schedule, ratings, league, day)
+            excluded.extend(
+                {
+                    "game_id": str(g),
+                    "date": str(day),
+                    "reason": "missing_matchup_inputs",
+                }
+                for g in projected.loc[projected.missing_input_count.ne(0), "game_id"]
+            )
             projected = projected[projected["missing_input_count"].eq(0)]
             merged = projected.merge(
                 slate[["game_id", "home_goals", "away_goals", "last_period_type"]],
                 on="game_id",
             )
             rows.append(merged)
-    frame = pd.concat(rows, ignore_index=True)
-    return frame.reindex(columns=BACKTEST_COLUMNS)
+    frame = (pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()).reindex(
+        columns=BACKTEST_COLUMNS
+    )
+    frame.attrs["coverage"] = {
+        "eligible": eligible,
+        "evaluated": len(frame),
+        "excluded": excluded,
+    }
+    return frame
 
 
 def metrics(frame: pd.DataFrame) -> dict:
@@ -116,6 +137,7 @@ def metrics(frame: pd.DataFrame) -> dict:
     ]
     return {
         "n": int(len(frame)),
+        "coverage": frame.attrs.get("coverage"),
         "log_loss": float(
             -np.mean(home_won * np.log(p) + (1 - home_won) * np.log(1 - p))
         ),

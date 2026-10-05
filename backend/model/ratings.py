@@ -10,6 +10,11 @@ from backend.config import MODEL_VERSION
 from backend.features.windows import feature_rates, venue_windows
 from backend.model.goal_map import predict_per60
 
+
+class InsufficientHistory(ValueError):
+    """No team has the minimum pregame history needed for a forecast."""
+
+
 LEAGUE_KEYS = ("home_xgf", "home_xga", "away_xgf", "away_xga")
 
 
@@ -60,7 +65,15 @@ def team_ratings(games: pd.DataFrame, as_of, goal_map: dict):
     # A 25-game venue window never needs more than the previous season, and
     # limiting the pool keeps relocated or renamed franchises out of the table.
     recent = games[games["season"] >= season_of(as_of) - 1]
-    rates = feature_rates(venue_windows(recent, as_of))
+    return ratings_from_windows(venue_windows(recent, as_of), as_of, goal_map)
+
+
+def ratings_from_windows(windows: pd.DataFrame, as_of, goal_map: dict):
+    """Recompute a forecast from the compact, archived pregame input window."""
+    as_of = pd.Timestamp(as_of).date()
+    if windows.empty:
+        raise InsufficientHistory(f"No history before {as_of}")
+    rates = feature_rates(windows)
     venues = _expected_goals(rates, goal_map)
     table = venues.pivot(
         index="team_abbr",
@@ -88,7 +101,7 @@ def team_ratings(games: pd.DataFrame, as_of, goal_map: dict):
     ratings["window_games_away"] = ratings["window_games_away"].astype(int)
     usable = ratings[~ratings["insufficient_window"]]
     if usable.empty:
-        raise ValueError(f"No team has a sufficient window as of {as_of}")
+        raise InsufficientHistory(f"No team has a sufficient window as of {as_of}")
     league = {key: float(usable[key].mean()) for key in LEAGUE_KEYS}
     ratings["home_attack"] = ratings["home_xgf"] / league["home_xgf"]
     ratings["home_defense"] = ratings["home_xga"] / league["home_xga"]
