@@ -69,7 +69,7 @@ Stacked penalties are dated from the latest one, and nothing has been compared w
 
 `live-win-probability` reads the NHL score feed once per poll for the slate, scores every game inside its puck-drop window against the forecast `nhl.game_projections` froze, and writes `nhl.live_win_probability`.
 It never writes a pregame table, is read only unless `--publish` is passed, and exits when no game is left to watch.
-A Supabase pg_cron job (`ops/install_live_cron.sql`) dispatches the `live win probability` workflow every five minutes only while a started game has no terminal row and no worker is alive.
+A Supabase pg_cron job (`ops/install_live_cron.sql`) checks every five minutes from September through April and dispatches the `live win probability` workflow only while a started game has no terminal row and no worker is alive.
 
 ## Data sources
 

@@ -13,7 +13,9 @@ end $$;
 -- no worker is alive.
 -- A terminal row ('Final' or 'Off') ends a game's claim on the dispatcher, and
 -- the six-hour bound ends it for a game no worker ever reached.
-select cron.schedule('nhl-live-win-probability-dispatch', '*/5 * * * *', $dispatch$
+-- September through April only: every run adds a row to cron.job_run_details,
+-- and the regular season never reaches May.
+select cron.schedule('nhl-live-win-probability-dispatch', '*/5 * * 9-12,1-4 *', $dispatch$
   select net.http_post(
     url := 'https://api.github.com/repos/renenunezg/momentumnhl/dispatches',
     headers := jsonb_build_object(
