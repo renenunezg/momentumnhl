@@ -1,7 +1,7 @@
 """Provider identity, settlement and offline forecast replay."""
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -153,6 +153,14 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
             away_team="New York Rangers",
         )
     ]
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 10, 5, 12, tzinfo=UTC).astimezone(tz)
+
+    # The run stamps as_of from the wall clock and skips games already started.
+    monkeypatch.setattr(pipeline, "datetime", Clock)
     monkeypatch.setattr(store, "PROCESSED_DIR", tmp_path)
     monkeypatch.setattr(store, "RECEIPTS_DIR", tmp_path / "receipts")
     monkeypatch.setattr(pipeline, "ingest_moneypuck", lambda *a: receipt)
