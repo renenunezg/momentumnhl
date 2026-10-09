@@ -19,7 +19,13 @@ Outputs publish to the `nhl` schema of a Postgres database that a separate web f
    Production retains equal tie allocation and rates that already include overtime; explicit regulation-to-final overtime treatment is experimental.
 5. **Prices and picks.** Lines come from the NHL's partner feed: DraftKings in the US and FanDuel in Canada.
    Quotes need a provider timestamp within 24 hours or an exact, independently corroborated DraftKings public listing observed within 15 minutes of publication.
-   Moneylines require 13 percentage points of edge and positive expected value; totals require a one-goal difference.
+   A game the books quote publishes a market-anchored forecast.
+   The model's home win probability gets a 0.10 home-ice logit shift, then blends in logit space at a model weight of 0.5 with the de-vigged consensus of the books quoting both moneyline sides; the model total blends at the same weight with the median line of the books quoting both sides of a total.
+   The two goal rates are then set so the Poisson grid returns exactly that probability and total, so the published goal rates, win probability, total, fair prices, the picks, and the in-game anchor are one forecast; `pure_home_win_prob`, `pure_model_total`, `market_home_prob`, and `market_total` keep the inputs beside it.
+   The partner feed prices only the day's slate, so games further out stay pure until their game-day run.
+   Picks (`nhl-picks-v2`) price the published forecast: a moneyline needs 4.5 percentage points over the price's break-even probability and positive expected value, and a total needs half a goal between the published total and the line, which is the sheet's one-goal rule on the pure total.
+   A market the books do not quote two-sided is a no-play.
+   The weight and gates are a product decision: against 2022 to 2025 opening and closing lines the pure model added no information beyond the price for either market, and estimated EV does not establish a real betting advantage.
    Stakes are flat one unit; fractional Kelly is informational.
    Decisions freeze at first publication.
 6. **Grading.** Official NHL final scores, including the shootout-deciding goal, settle decisions the next morning.

@@ -1,11 +1,14 @@
-"""Pregame decisions at the sheet's thresholds, frozen at first publication,
-and their settlement at the recorded line and price."""
+"""Pregame decisions, frozen at first publication, and their settlement at
+the recorded line and price. Both markets price the published projection and
+need it anchored to a two-sided quote."""
 
 from datetime import timedelta
 
 import pandas as pd
 
 from backend.config import (
+    HOME_ICE_LOGIT,
+    MARKET_ANCHOR_W_MODEL,
     MAX_OFFER_AGE_HOURS,
     MONEYLINE_MIN_EDGE,
     POLICY_VERSION,
@@ -70,6 +73,8 @@ SETTLEMENT_COLUMNS = [
 ]
 PRICING_WEIGHTS = {
     "moneyline_min_edge": MONEYLINE_MIN_EDGE,
+    "market_anchor_w_model": MARKET_ANCHOR_W_MODEL,
+    "home_ice_logit": HOME_ICE_LOGIT,
     "total_min_edge_goals": TOTAL_MIN_EDGE_GOALS,
     "tie_split": 0.5,
     "grid_tail_tolerance": TAIL_TOLERANCE,
@@ -110,6 +115,83 @@ def _base(projection, market, decision_at, receipts, flags) -> dict:
         "data_flags": flags,
         "pricing_weights": PRICING_WEIGHTS,
     }
+
+
+def _eligible_offers(projection, market_offers: pd.DataFrame, decision_at):
+    """The offers a decision may use: quoted for this fixture, fetched by the
+    decision, and either fresh or independently verified. Also returns which
+    ones needed the verification."""
+    stale_before = decision_at - timedelta(hours=MAX_OFFER_AGE_HOURS)
+    timestamp_fresh = _timestamp(market_offers["provider_last_update"]) >= stale_before
+    verified = pd.Series(False, index=market_offers.index)
+    if "quote_verification" in market_offers:
+        verified = market_offers.apply(
+            lambda offer: verification.valid(
+                offer.quote_verification, offer, projection, decision_at
+            ),
+            axis=1,
+        )
+    valid_fixture = (
+        (_timestamp(market_offers["fetched_at"]) <= decision_at)
+        & (
+            _timestamp(market_offers["provider_start_date"])
+            == _timestamp(projection.start_date)
+        )
+        & (
+            _timestamp(market_offers["provider_last_update"])
+            <= _timestamp(market_offers["fetched_at"])
+        )
+    )
+    return market_offers[(timestamp_fresh | verified) & valid_fixture], verified
+
+
+def _priced_offers(offers: pd.DataFrame, game_id, market: str) -> pd.DataFrame:
+    quoted = offers[offers["game_id"].eq(game_id) & offers["market"].eq(market)]
+    return quoted[quoted["price"].abs() >= 100]
+
+
+def market_consensus(
+    projections: pd.DataFrame, offers: pd.DataFrame, decision_at
+) -> dict:
+    """What the books say about each game, from the offers a pick could use:
+    `home_prob` is the de-vigged home win probability averaged over every
+    book quoting both moneyline sides in one fetch, and `total` the median
+    line of the books quoting both sides of one total. A game or market no
+    book quotes two-sided is absent."""
+    decision_at = _timestamp(decision_at)
+    consensus = {}
+    for projection in projections.itertuples(index=False):
+        home_probs, totals = [], []
+        for market, first, second in (
+            ("h2h", "home", "away"),
+            ("totals", "over", "under"),
+        ):
+            quoted = _priced_offers(offers, projection.game_id, market)
+            if quoted.empty:
+                continue
+            eligible, _ = _eligible_offers(projection, quoted, decision_at)
+            for _, book in eligible.groupby(["provider_key", "fetched_at"]):
+                a, b = book[book["side"].eq(first)], book[book["side"].eq(second)]
+                if len(a) != 1 or len(b) != 1:
+                    continue
+                if market == "totals":
+                    if a["point"].iloc[0] == b["point"].iloc[0]:
+                        totals.append(float(a["point"].iloc[0]))
+                    continue
+                home_probs.append(
+                    pricing.devig(
+                        pricing.implied_probability(float(a["price"].iloc[0])),
+                        pricing.implied_probability(float(b["price"].iloc[0])),
+                    )[0]
+                )
+        game = {}
+        if home_probs:
+            game["home_prob"] = sum(home_probs) / len(home_probs)
+        if totals:
+            game["total"] = float(pd.Series(totals).median())
+        if game:
+            consensus[projection.game_id] = game
+    return consensus
 
 
 def _candidate(projection, offer, market) -> dict:
@@ -185,12 +267,10 @@ def decide(
     """One row per game and market. The best eligible offer across providers
     becomes the pick; otherwise the row records why there is no play."""
     decision_at = _timestamp(decision_at)
-    stale_before = decision_at - timedelta(hours=MAX_OFFER_AGE_HOURS)
     rows = []
     for projection in projections.itertuples(index=False):
-        game_offers = offers[offers["game_id"].eq(projection.game_id)]
-        flags = {"missing_input_count": int(projection.missing_input_count)}
         for market in MARKETS:
+            flags = {"missing_input_count": int(projection.missing_input_count)}
             if projection.missing_input_count > 0:
                 rows.append(
                     _no_play(
@@ -203,8 +283,7 @@ def decide(
                     )
                 )
                 continue
-            market_offers = game_offers[game_offers["market"].eq(market)]
-            market_offers = market_offers[market_offers["price"].abs() >= 100]
+            market_offers = _priced_offers(offers, projection.game_id, market)
             if market_offers.empty:
                 rows.append(
                     _no_play(
@@ -212,29 +291,7 @@ def decide(
                     )
                 )
                 continue
-            timestamp_fresh = (
-                _timestamp(market_offers["provider_last_update"]) >= stale_before
-            )
-            verified = pd.Series(False, index=market_offers.index)
-            if "quote_verification" in market_offers:
-                verified = market_offers.apply(
-                    lambda offer: verification.valid(
-                        offer.quote_verification, offer, projection, decision_at
-                    ),
-                    axis=1,
-                )
-            valid_fixture = (
-                (_timestamp(market_offers["fetched_at"]) <= decision_at)
-                & (
-                    _timestamp(market_offers["provider_start_date"])
-                    == _timestamp(projection.start_date)
-                )
-                & (
-                    _timestamp(market_offers["provider_last_update"])
-                    <= _timestamp(market_offers["fetched_at"])
-                )
-            )
-            fresh = market_offers[(timestamp_fresh | verified) & valid_fixture]
+            fresh, verified = _eligible_offers(projection, market_offers, decision_at)
             if fresh.empty:
                 rows.append(
                     _no_play(
@@ -242,6 +299,25 @@ def decide(
                     )
                 )
                 continue
+            anchor, flag = (
+                (projection.market_home_prob, "market_home_probability")
+                if market == "h2h"
+                else (projection.market_total, "market_total_consensus")
+            )
+            if pd.isna(anchor):
+                # The pure model alone is overconfident against a price.
+                rows.append(
+                    _no_play(
+                        projection,
+                        market,
+                        "no_paired_market",
+                        decision_at,
+                        receipts,
+                        flags,
+                    )
+                )
+                continue
+            flags = {**flags, flag: float(anchor)}
             candidates = []
             for index, offer in fresh.iterrows():
                 candidate = _candidate(projection, offer, market)

@@ -23,7 +23,7 @@ from backend.config import (
 from backend.etl import moneypuck, nhl_api, store
 from backend.features.windows import venue_windows
 from backend.model import goal_map
-from backend.model.projections import project_games
+from backend.model.projections import anchor_to_market, project_games
 from backend.model.ratings import ratings_from_windows, season_of
 from backend.odds import partner, verification
 
@@ -194,7 +194,10 @@ def daily(
     )
     ratings, league = build_ratings(day, teams)
     as_of = datetime.now(UTC).isoformat().replace("+00:00", "Z")
-    projections = project_games(schedule, ratings, league, as_of)
+    pure = project_games(schedule, ratings, league, as_of)
+    projections = anchor_to_market(
+        pure, recommendations.market_consensus(pure, offers, as_of)
+    )
     snapshot = partner.market_snapshot(offers)
     today = projections[projections["game_date"].eq(day)]
     decision_receipts = {

@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 
 from backend import recommendations
-from backend.model.projections import project_games
+from backend.model.projections import anchor_to_market, project_games
 from backend.model.ratings import ratings_from_windows
 
 
@@ -44,8 +44,12 @@ def forecast(path: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     schedule = payload["schedule"]
     for game in schedule:
         game["game_date"] = date.fromisoformat(game["game_date"])
-    projections = project_games(schedule, ratings, league, payload["as_of"])
     offers = pd.read_json(io.StringIO(payload["offers"]), orient="table")
+    pure = project_games(schedule, ratings, league, payload["as_of"])
+    projections = anchor_to_market(
+        pure,
+        recommendations.market_consensus(pure, offers, payload["as_of"]),
+    )
     decisions = recommendations.decide(
         projections[projections.game_date.eq(day)],
         offers,

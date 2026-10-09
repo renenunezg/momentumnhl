@@ -1,6 +1,14 @@
-"""Odds arithmetic exactly as the workbook computes it."""
+"""Odds arithmetic exactly as the workbook computes it, plus the market
+anchor a quoted game's published forecast moves to."""
 
-from backend.config import KELLY_FRACTION, MIN_PRICE_MULTIPLIER
+from scipy.special import expit, logit
+
+from backend.config import (
+    HOME_ICE_LOGIT,
+    KELLY_FRACTION,
+    MARKET_ANCHOR_W_MODEL,
+    MIN_PRICE_MULTIPLIER,
+)
 
 
 def american_to_decimal(price: float) -> float:
@@ -26,6 +34,18 @@ def devig(probability_a: float, probability_b: float) -> tuple[float, float]:
     """Two-way implied probabilities scaled to sum to one."""
     total = probability_a + probability_b
     return probability_a / total, probability_b / total
+
+
+def anchored_home_probability(model_home: float, market_home: float) -> float:
+    """The model's home win probability, shifted for home ice and blended in
+    logit space with the de-vigged market consensus, which already prices it."""
+    model = logit(model_home) + HOME_ICE_LOGIT
+    return float(
+        expit(
+            MARKET_ANCHOR_W_MODEL * model
+            + (1 - MARKET_ANCHOR_W_MODEL) * logit(market_home)
+        )
+    )
 
 
 def kelly_fraction(

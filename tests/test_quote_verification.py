@@ -76,6 +76,10 @@ def quote_case(monkeypatch, tmp_path):
         away_win_prob=0.15,
         model_total=7.9,
         missing_input_count=0,
+        pure_home_win_prob=0.85,
+        pure_model_total=7.9,
+        market_home_prob=0.54,
+        market_total=6.5,
     )
     projection = pd.DataFrame([row])
     receipts = {
