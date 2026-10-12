@@ -1,6 +1,7 @@
 """Walk-forward replay: for every game date, ratings from windows that end
-the day before, then the same matchup math the live run uses. Model-only,
-since no free closing-line archive exists for the NHL."""
+the day before, then the same matchup math the live run uses. The replay is
+model-only; the published rows also carry each game's historical closing
+line as a market benchmark, which no forecast ever sees."""
 
 import numpy as np
 import pandas as pd
@@ -11,8 +12,9 @@ from backend.etl.nhl_api import FINAL_STATES
 from backend.model import goal_map as goal_map_model
 from backend.model.projections import project_games
 from backend.model.ratings import InsufficientHistory, team_ratings
+from backend.odds.espn import CLOSING_COLUMNS
 
-BACKTEST_COLUMNS = [
+PREDICTION_COLUMNS = [
     "game_id",
     "season",
     "game_date",
@@ -26,6 +28,7 @@ BACKTEST_COLUMNS = [
     "home_win_prob",
     "model_total",
 ]
+BACKTEST_COLUMNS = PREDICTION_COLUMNS + CLOSING_COLUMNS
 
 
 def official_results(games: pd.DataFrame, season: int) -> pd.DataFrame:
@@ -107,7 +110,7 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
             )
             rows.append(merged)
     frame = (pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()).reindex(
-        columns=BACKTEST_COLUMNS
+        columns=PREDICTION_COLUMNS
     )
     frame.attrs["coverage"] = {
         "eligible": eligible,

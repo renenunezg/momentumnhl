@@ -74,8 +74,23 @@ Compressing the pregame goal ratio by a factor fitted on earlier seasons lowered
 Stacked penalties are dated from the latest one, and nothing has been compared with a live market.
 
 `live-win-probability` reads the NHL score feed once per poll for the slate, scores every game inside its puck-drop window against the forecast `nhl.game_projections` froze, and writes `nhl.live_win_probability`.
-It never writes a pregame table, is read only unless `--publish` is passed, and exits when no game is left to watch.
-A Supabase pg_cron job (`ops/install_live_cron.sql`) checks every five minutes from September through April and dispatches the `live win probability` workflow only while a started game has no terminal row and no worker is alive.
+It is read only unless `--publish` is passed, and exits when no game is left to watch.
+Its only pregame write is the closing-line archive below.
+A Supabase pg_cron job (`ops/install_live_cron.sql`) checks every five minutes from September through April and dispatches the `live win probability` workflow from 20 minutes before a puck drop, only while a game has no terminal row and no worker is alive.
+
+## Closing lines
+
+Closing lines are a market benchmark for forecast accuracy: they grade nothing and no forecast reads one.
+`nhl.forecast_accuracy` reports the de-vigged closing moneyline's log loss and the closing total's MAE beside the model's figures on the same games, for each season and overall.
+In the backtest the model is the pure model; in the live record `model_*` is the published market-anchored forecast and `pure_model_*` the pure model.
+
+Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,121 of 5,212 games, and its closing total for 3,896, since 2022-23 has no usable closing total.
+On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.691 over 3,900 games, and the closing total's MAE is 1.87 against 1.92 over 3,896.
+
+For a live game the worker archives the partner feed to `nhl.market_snapshots` during the 15 minutes before the scheduled start, once per new feed stamp.
+The close is the freshest two-sided quote stamped in that window and fetched before the start (`nhl.live_predictions`).
+The feed turns to in-play lines at puck drop, so later quotes never qualify, and a game with no qualifying quote has no close: none is backfilled.
+FanDuel restamps every five minutes and DraftKings hourly, so the close is usually FanDuel's.
 
 ## Data sources
 
@@ -83,6 +98,7 @@ A Supabase pg_cron job (`ops/install_live_cron.sql`) checks every five minutes f
 - MoneyPuck's listed goalie game-by-game archives, downloaded only by the optional `ingest-goalies` command and cached under `backend/data/raw/goalies/`.
 - NHL API (`api-web.nhle.com`): schedule, scores, standings, logos and partner odds.
   Historical official results are cached under `backend/data/raw/results/`.
+- ESPN's odds API: a one-time cached pull of historical closing lines for the backtest benchmark only. It is never called by any command here.
 - The Odds API is never called.
 
 ## Independent quote verification
@@ -142,7 +158,7 @@ Research outputs and starter inputs do not alter this schema.
 
 Verify a full published-and-graded production cycle after the repaired dispatch authorization.
 Collect timestamped pregame market and starter evidence before evaluating their incremental value in live conditions.
-Candidate promotion, coherent calibrated bet pricing, period-specific overtime inputs, puck-line pricing and closing-line capture remain separate work.
+Candidate promotion, coherent calibrated bet pricing, period-specific overtime inputs and puck-line pricing remain separate work.
 
 
 Settlement runs before pregame ingestion and includes dates from every unresolved ledger entry, even outside the routine three-day result window.

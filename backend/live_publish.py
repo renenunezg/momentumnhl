@@ -4,7 +4,8 @@ One score-feed call covers a slate date. None is made before a tracked
 game's scheduled puck drop or after every tracked game is terminal, and the
 worker exits as soon as nothing is left to watch. Each state is scored by the
 in-game model against the pregame goal rates in nhl.game_projections, which
-the database freezes at puck drop; pregame tables are never written here.
+the database freezes at puck drop. The only pregame write is the archive of
+partner quotes for games about to start, kept as their closing lines.
 """
 
 import hashlib
@@ -29,7 +30,9 @@ FULL_STRENGTH = "1551"
 # The dispatcher treats a row newer than four minutes as a living worker.
 HEARTBEAT_SECONDS = 120
 SCHEDULE_REFRESH_SECONDS = 300
-START_LEAD = timedelta(minutes=15)
+# Longer than the dispatcher's 20-minute lead, so a worker dispatched for a
+# slate's first game is tracking it before its closing quotes are stamped.
+START_LEAD = timedelta(minutes=25)
 # Matches the dispatcher window, so a recovered worker resumes the same games.
 START_LOOKBACK = timedelta(hours=6)
 # A game still unstarted this long after puck drop is abandoned, not polled.
@@ -212,6 +215,7 @@ class LivePublisher:
         load_saved,
         fetch_states,
         write=None,
+        archive_closing=None,
         expires_at: datetime | None = None,
     ):
         self.params = params
@@ -219,6 +223,7 @@ class LivePublisher:
         self.load_saved = load_saved
         self.fetch_states = fetch_states
         self.write = write
+        self.archive_closing = archive_closing
         self.expires_at = expires_at.isoformat() if expires_at else None
         self.games: dict[str, Game] = {}
         self.payloads: dict[str, dict] = {}
@@ -297,6 +302,15 @@ class LivePublisher:
                 " (published)" if self.write else " (read only)",
             )
         self.done.update(finished)
+        if self.archive_closing:
+            # A missed quote leaves that game without a close; it must never
+            # cost the live games a refresh.
+            try:
+                self.archive_closing(
+                    {g.game_id: g.start for g in open_games if g.start > now}, now
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("Closing quote archive failed")
         return len(self.done) < len(self.games)
 
 

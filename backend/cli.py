@@ -130,10 +130,11 @@ def main() -> None:
         import sys
         from datetime import UTC, datetime, timedelta
 
-        from backend import live_publish
+        from backend import live_publish, pipeline, publish
         from backend.db import writes_allowed
         from backend.etl import live_feed
         from backend.model import ingame
+        from backend.odds.closing import ClosingArchiver
 
         if args.interval < 30:
             raise SystemExit("--interval must be at least 30 seconds")
@@ -148,6 +149,16 @@ def main() -> None:
             load_saved=live_publish.load_saved,
             fetch_states=live_feed.fetch_states,
             write=live_publish.write_snapshots if args.publish else None,
+            archive_closing=(
+                ClosingArchiver(
+                    pipeline.fetch_offers,
+                    lambda snapshot: publish.publish_day(
+                        _engine(), datetime.now(UTC), market_snapshot=snapshot
+                    ),
+                ).capture
+                if args.publish
+                else None
+            ),
             expires_at=(
                 datetime.now(UTC) + timedelta(seconds=args.duration)
                 if args.duration

@@ -47,4 +47,9 @@ HOME_ICE_LOGIT = 0.10
 # this needs independent public-listing corroboration before it is eligible.
 MAX_OFFER_AGE_HOURS = 24
 
+# A partner quote is a closing line only when the feed stamped it this close
+# to the scheduled start: three of FanDuel's five-minute restamps. The view
+# nhl.live_predictions applies the same bound.
+CLOSING_LINE_MINUTES = 15
+
 SITE_TIME_ZONE = "America/Los_Angeles"

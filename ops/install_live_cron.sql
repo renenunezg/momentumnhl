@@ -10,7 +10,8 @@ begin
 end $$;
 
 -- Live win probability: dispatch only around unfinished games, and only when
--- no worker is alive.
+-- no worker is alive. The worker starts 20 minutes before a slate's first
+-- puck drop so it archives that game's closing quotes.
 -- A terminal row ('Final' or 'Off') ends a game's claim on the dispatcher, and
 -- the six-hour bound ends it for a game no worker ever reached.
 -- September through April only: every run adds a row to cron.job_run_details,
@@ -31,7 +32,7 @@ select cron.schedule('nhl-live-win-probability-dispatch', '*/5 * * 9-12,1-4 *', 
     select 1 from nhl.game_projections as g
     left join nhl.live_win_probability as live using (game_id)
     where g.start_date between now() - interval '6 hours'
-                           and now() + interval '5 minutes'
+                           and now() + interval '20 minutes'
       and coalesce(live.payload->>'abstract_state', '') not in ('Final', 'Off')
   ) and not exists (
     -- Fresh writes are the heartbeat. Queue a handoff before the bounded

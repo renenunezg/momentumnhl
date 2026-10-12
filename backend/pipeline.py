@@ -25,7 +25,7 @@ from backend.features.windows import venue_windows
 from backend.model import goal_map
 from backend.model.projections import anchor_to_market, project_games
 from backend.model.ratings import ratings_from_windows, season_of
-from backend.odds import partner, verification
+from backend.odds import espn, partner, verification
 
 SCHEDULE_DAYS = 7
 RESULT_LOOKBACK_DAYS = 3
@@ -169,8 +169,20 @@ def fetch_offers(
 
 def run_backtest() -> pd.DataFrame:
     games = moneypuck.read_games(range(HISTORY_START_SEASON, max(BACKTEST_SEASONS) + 1))
-    frame = backtest.run(games, BACKTEST_SEASONS)
+    frame = with_closing_lines(backtest.run(games, BACKTEST_SEASONS))
     store.write_processed(frame, "backtest.parquet")
+    return frame
+
+
+def with_closing_lines(predictions: pd.DataFrame) -> pd.DataFrame:
+    """Closing lines join after the replay, so no forecast can depend on one."""
+    frame = predictions[backtest.PREDICTION_COLUMNS].merge(
+        espn.closing_lines(),
+        on=["game_date", "home_team", "away_team"],
+        how="left",
+        validate="one_to_one",
+    )
+    frame.attrs = predictions.attrs
     return frame
 
 
