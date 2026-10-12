@@ -56,3 +56,21 @@ def test_short_window_is_flagged():
     windows = venue_windows(frame, date(2026, 12, 1))
     assert windows["games"].eq(8).all()
     assert windows["insufficient"].all()
+
+
+def test_team_with_one_venue_is_unrated_not_fatal():
+    # A relocated team that has opened at home has no away window yet.
+    from backend.model import goal_map
+    from backend.model.ratings import team_ratings
+
+    first = date(2025, 10, 1)
+    frame = pd.concat(
+        [
+            _games(team, venue, 12, first, 0)
+            for team in ("BOS", "TOR")
+            for venue in ("home", "away")
+        ]
+        + [_games("UTA", "home", 1, first, 0)]
+    )
+    ratings, _ = team_ratings(frame, date(2026, 1, 1), goal_map.load())
+    assert sorted(ratings["team_abbr"]) == ["BOS", "TOR"]

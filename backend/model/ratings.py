@@ -80,6 +80,9 @@ def ratings_from_windows(windows: pd.DataFrame, as_of, goal_map: dict):
         columns="venue",
         values=["xgf", "xga", "games", "insufficient"],
     )
+    # A team that has played at only one venue has no rating yet, like a team
+    # that has not played: its games go unforecast until it has both windows.
+    table = table.dropna(subset=[("games", "home"), ("games", "away")])
     ratings = pd.DataFrame(
         {
             "team_abbr": table.index,
