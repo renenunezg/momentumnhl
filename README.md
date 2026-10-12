@@ -84,8 +84,8 @@ Closing lines are a market benchmark for forecast accuracy: they grade nothing a
 `nhl.forecast_accuracy` reports the de-vigged closing moneyline's log loss and the closing total's MAE beside the model's figures on the same games, for each season and overall.
 In the backtest the model is the pure model; in the live record `model_*` is the published market-anchored forecast and `pure_model_*` the pure model.
 
-Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,121 of 5,212 games, and its closing total for 3,896, since 2022-23 has no usable closing total.
-On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.691 over 3,900 games, and the closing total's MAE is 1.87 against 1.92 over 3,896.
+Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,134 of 5,225 games, and its closing total for 3,909, since 2022-23 has no usable closing total.
+On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.691 over 3,913 games, and the closing total's MAE is 1.87 against 1.92 over 3,909.
 
 For a live game the worker archives the partner feed to `nhl.market_snapshots` during the 15 minutes before the scheduled start, once per new feed stamp.
 The close is the freshest two-sided quote stamped in that window and fetched before the start (`nhl.live_predictions`).
