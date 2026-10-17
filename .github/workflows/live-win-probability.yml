@@ -34,5 +34,5 @@ jobs:
         # Hand off before the six-hour runner limit; the queued replacement
         # starts after this worker exits. Idle slates exit early.
         run: >-
-          poetry run python -m backend live-win-probability --watch --interval 30
+          poetry run python -m backend live-win-probability --watch --interval 60
           --duration 20700 --publish

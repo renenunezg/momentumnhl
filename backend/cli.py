@@ -41,7 +41,7 @@ def main() -> None:
         "live-win-probability", help="score the games in progress; read only by default"
     )
     live.add_argument("--watch", action="store_true")
-    live.add_argument("--interval", type=int, default=30)
+    live.add_argument("--interval", type=int, default=60)
     live.add_argument("--duration", type=int)
     live.add_argument("--publish", action="store_true")
     for name, help_text in (
