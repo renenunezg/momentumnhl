@@ -16,6 +16,8 @@ end $$;
 -- the six-hour bound ends it for a game no worker ever reached.
 -- September through April only: every run adds a row to cron.job_run_details,
 -- and the regular season never reaches May.
+-- Minute offset 0: the CFB, NFL, and MLB dispatchers take offsets 1, 2, and 3
+-- so the four never start on the same minute of the shared database.
 select cron.schedule('nhl-live-win-probability-dispatch', '*/5 * * 9-12,1-4 *', $dispatch$
   select net.http_post(
     url := 'https://api.github.com/repos/renenunezg/momentumnhl/dispatches',
