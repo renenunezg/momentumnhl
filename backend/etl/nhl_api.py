@@ -1,7 +1,8 @@
 """NHL API client: schedule, scores, standings, and the partner sportsbook
 feed. Every fetch also writes a receipt so decisions can cite their inputs.
 The API needs a browser-like User-Agent and its "/now" endpoints redirect to
-the dated form, which requests follows."""
+the dated form, which requests follows. A missing top-level key is a changed
+feed and fails the fetch; an empty list is an empty slate."""
 
 from datetime import UTC, date, datetime
 
@@ -85,8 +86,8 @@ def schedule(start: date) -> tuple[list[dict], dict]:
     regular season only, like the sheet's Natural Stat Trick tables."""
     payload, receipt = _get(f"schedule/{start.isoformat()}", f"schedule_{start}")
     rows = []
-    for day in payload.get("gameWeek", []):
-        for game in day.get("games", []):
+    for day in payload["gameWeek"]:
+        for game in day["games"]:
             if int(game["gameType"]) != REGULAR_SEASON:
                 continue
             row = _game_row(game)
@@ -99,7 +100,7 @@ def scores(day: date) -> tuple[list[dict], dict]:
     """That day's games with scores, states, and the finishing period type."""
     payload, receipt = _get(f"score/{day.isoformat()}", f"score_{day}")
     rows = []
-    for game in payload.get("games", []):
+    for game in payload["games"]:
         if int(game["gameType"]) != REGULAR_SEASON:
             continue
         row = _game_row(game)
@@ -117,7 +118,7 @@ def club_season(team_abbr: str, season: int) -> tuple[list[dict], dict]:
         f"club_season_{team_abbr}_{season}",
     )
     rows = []
-    for game in payload.get("games", []):
+    for game in payload["games"]:
         if int(game["gameType"]) != REGULAR_SEASON:
             continue
         rows.append(_game_row(game))
@@ -145,15 +146,18 @@ def live_scores(day: date) -> list[dict]:
         timeout=15,
     )
     response.raise_for_status()
-    return response.json().get("games", [])
+    return response.json()["games"]
 
 
 def standings(day: date) -> tuple[pd.DataFrame, dict]:
     """Team identity from the standings table. Before opening night the dated
-    table is empty, so the current one (last season's final) stands in."""
+    table is empty, so the current one (last season's final) stands in and
+    must list the teams."""
     payload, receipt = _get(f"standings/{day.isoformat()}", f"standings_{day}")
     if not payload.get("standings"):
         payload, receipt = _get("standings/now", "standings_now")
+        if not payload["standings"]:
+            raise ValueError("The NHL standings list no teams")
     rows = [
         {
             "team_abbr": team["teamAbbrev"]["default"],
@@ -163,7 +167,7 @@ def standings(day: date) -> tuple[pd.DataFrame, dict]:
             "logo_light": team.get("teamLogo"),
             "logo_dark": team.get("teamLogoDark"),
         }
-        for team in payload.get("standings", [])
+        for team in payload["standings"]
     ]
     return pd.DataFrame(rows).sort_values("team_abbr").reset_index(drop=True), receipt
 
@@ -171,13 +175,15 @@ def standings(day: date) -> tuple[pd.DataFrame, dict]:
 def partner_odds(country: str) -> tuple[dict, dict]:
     """The partner sportsbook's current slate: US is DraftKings, CA is FanDuel."""
     payload, receipt = _get(f"partner-game/{country}/now", f"partner_odds_{country}")
-    partner = payload.get("bettingPartner", {})
+    provider = payload["bettingPartner"]["name"]
+    if not provider:
+        raise ValueError(f"The {country} partner feed names no sportsbook")
     feed = {
         "country": country,
-        "provider": partner.get("name"),
-        "provider_key": (partner.get("name") or "").lower().replace(" ", ""),
-        "last_update": payload.get("lastUpdatedUTC"),
-        "odds_date": payload.get("currentOddsDate"),
+        "provider": provider,
+        "provider_key": provider.lower().replace(" ", ""),
+        "last_update": payload["lastUpdatedUTC"],
+        "odds_date": payload["currentOddsDate"],
         "fetched_at": receipt["observed_at"],
         "games": [
             {
@@ -189,7 +195,7 @@ def partner_odds(country: str) -> tuple[dict, dict]:
                 "home": game["homeTeam"].get("odds", []),
                 "away": game["awayTeam"].get("odds", []),
             }
-            for game in payload.get("games", [])
+            for game in payload["games"]
         ],
     }
     return feed, receipt
