@@ -10,6 +10,7 @@ from scipy.stats import poisson
 from backend.config import GRID_MAX_GOALS
 
 TAIL_TOLERANCE = 1e-12
+TIE_SPLIT = 0.5
 
 
 def grid(home_lambda: float, away_lambda: float, max_goals: int = GRID_MAX_GOALS):
@@ -23,14 +24,11 @@ def grid(home_lambda: float, away_lambda: float, max_goals: int = GRID_MAX_GOALS
     return cells / cells.sum()
 
 
-def matchup(
-    home_lambda: float, away_lambda: float, overtime_home_probability: float = 0.5
-) -> dict:
-    if not 0 <= overtime_home_probability <= 1:
-        raise ValueError("Overtime probability must be between zero and one")
+def matchup(home_lambda: float, away_lambda: float) -> dict:
+    """A regulation tie is split evenly, as the sheet does."""
     cells = grid(home_lambda, away_lambda)
     tie = float(np.trace(cells))
-    home = float(np.tril(cells, -1).sum()) + tie * overtime_home_probability
+    home = float(np.tril(cells, -1).sum()) + tie * TIE_SPLIT
     away = 1.0 - home
     return {
         "home_win_prob": home,

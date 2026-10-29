@@ -16,7 +16,7 @@ from backend.config import (
 )
 from backend.grading import VOID_STATUSES
 from backend.model import pricing
-from backend.model.poisson import TAIL_TOLERANCE, total_probabilities
+from backend.model.poisson import TAIL_TOLERANCE, TIE_SPLIT, total_probabilities
 from backend.odds import verification
 
 MARKETS = ("h2h", "totals")
@@ -77,7 +77,7 @@ PRICING_WEIGHTS = {
     "market_anchor_w_model": MARKET_ANCHOR_W_MODEL,
     "home_ice_logit": HOME_ICE_LOGIT,
     "total_min_edge_goals": TOTAL_MIN_EDGE_GOALS,
-    "tie_split": 0.5,
+    "tie_split": TIE_SPLIT,
     "grid_tail_tolerance": TAIL_TOLERANCE,
 }
 
