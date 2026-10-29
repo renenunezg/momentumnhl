@@ -187,7 +187,7 @@ def main() -> None:
 
         day = _day(args.date)
         teams, _ = pipeline.load_teams(day)
-        ratings, league = pipeline.build_ratings(day, teams)
+        ratings, league, *_ = pipeline.build_ratings(day, teams)
         print(json.dumps({k: round(v, 3) for k, v in league.items()}))
         columns = [
             "team_abbr",
@@ -204,7 +204,7 @@ def main() -> None:
 
         day = _day(args.date)
         teams, _ = pipeline.load_teams(day)
-        ratings, league = pipeline.build_ratings(day, teams)
+        ratings, league, *_ = pipeline.build_ratings(day, teams)
         schedule, _ = pipeline.fetch_schedule(day)
         frame = project_games(schedule, ratings, league, day.isoformat())
         columns = [

@@ -1,19 +1,15 @@
 """The daily run: ingest, grade, rate, project, price, decide, publish. Each
 stage is also a CLI command so a piece can be rerun on its own."""
 
-import hashlib
 import json
 import os
-import platform
 import time
 from datetime import UTC, date, datetime, timedelta
-from importlib.metadata import version
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from backend import backtest, grading, recommendations
+from backend import backtest, grading, recommendations, replay
 from backend.config import (
     BACKTEST_SEASONS,
     HISTORY_START_SEASON,
@@ -128,17 +124,15 @@ def grade_pending(day: date, engine) -> dict:
 
 
 def build_ratings(day: date, teams: pd.DataFrame):
+    """Returns (ratings, league, windows, goal map); the last two are the
+    inputs a forecast replay retains."""
     games = moneypuck.read_games(_seasons(day))
     windows = venue_windows(games[games.season.ge(season_of(day) - 1)], day)
     coefficients = goal_map.load()
     ratings, league = ratings_from_windows(windows, day, coefficients)
-    ratings.attrs["replay_windows"] = windows.to_json(
-        orient="table", date_format="iso", double_precision=15
-    )
-    ratings.attrs["goal_map"] = coefficients
     names = dict(zip(teams["team_abbr"], teams["team"]))
     ratings["team"] = ratings["team_abbr"].map(names).fillna(ratings["team_abbr"])
-    return ratings, league
+    return ratings, league, windows, coefficients
 
 
 def fetch_offers(
@@ -204,7 +198,7 @@ def daily(
     receipts["odds"] = store.receipt(
         "partner_odds", json.dumps(odds_receipts, sort_keys=True).encode()
     )
-    ratings, league = build_ratings(day, teams)
+    ratings, league, windows, coefficients = build_ratings(day, teams)
     as_of = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     pure = project_games(schedule, ratings, league, as_of)
     projections = anchor_to_market(
@@ -220,47 +214,18 @@ def daily(
         for key in ("moneypuck", "schedule", "odds")
     }
     decisions = recommendations.decide(today, offers, decision_receipts, as_of)
-    # Compact sufficient inputs preserve the exact daily model without retaining
-    # the full multi-season MoneyPuck download on every run.
-    store.receipt(
-        "forecast_replay",
-        json.dumps(
-            {
-                "version": 1,
-                "code_revision": os.getenv("GITHUB_SHA"),
-                "source_hashes": {
-                    str(path.relative_to(Path(__file__).parent)): hashlib.sha256(
-                        path.read_bytes()
-                    ).hexdigest()
-                    for path in sorted(Path(__file__).parent.rglob("*.py"))
-                    if "data" not in path.relative_to(Path(__file__).parent).parts
-                },
-                "runtime": {
-                    "python": platform.python_version(),
-                    **{
-                        package: version(package)
-                        for package in ("numpy", "pandas", "scipy")
-                    },
-                },
-                "as_of": as_of,
-                "day": str(day),
-                "model_version": str(ratings.model_version.iloc[0]),
-                "windows": ratings.attrs["replay_windows"],
-                "goal_map": ratings.attrs["goal_map"],
-                "teams": teams.to_json(
-                    orient="table", date_format="iso", double_precision=15
-                ),
-                "schedule": json.loads(json.dumps(schedule, default=str)),
-                "offers": offers.to_json(
-                    orient="table", date_format="iso", double_precision=15
-                ),
-                "receipts": decision_receipts,
-            },
-            sort_keys=True,
-            allow_nan=False,
-        ).encode(),
+    replay.archive(
+        day=day,
+        as_of=as_of,
+        code_revision=os.getenv("GITHUB_SHA"),
+        model_version=str(ratings.model_version.iloc[0]),
+        windows=windows,
+        goal_map=coefficients,
+        teams=teams,
+        schedule=schedule,
+        offers=offers,
+        receipts=decision_receipts,
     )
-    ratings.attrs.clear()
     store.write_processed(ratings, "ratings", f"{day}.parquet")
     store.write_processed(projections, "projections", f"{day}.parquet")
     store.write_processed(decisions, "decisions", f"{day}.parquet")
