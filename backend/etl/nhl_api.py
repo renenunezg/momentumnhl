@@ -17,6 +17,8 @@ USER_AGENT = "Mozilla/5.0 (momentumnhl; renenunez.dev)"
 REQUEST_TIMEOUT_SECONDS = 30
 REGULAR_SEASON = 2
 FINAL_STATES = ("OFF", "FINAL")
+# gameScheduleState codes for a fixture that will not be played as scheduled.
+CALLED_OFF = {"PPD": "postponed", "CNCL": "cancelled"}
 PARTNER_COUNTRIES = ("US", "CA")
 
 _session = requests.Session()

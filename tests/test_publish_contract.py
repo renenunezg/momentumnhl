@@ -79,16 +79,18 @@ def test_official_score_feed_preserves_settlement_identity(monkeypatch):
     overdue = pending.assign(start_date="2026-09-29T23:00:00Z")
     recovered = pipeline.fetch_results(date(2026, 10, 5), teams, overdue)
     assert len(recovered[0]) == 1
-    postponed = nhl_api.scores(date(2026, 9, 29))[0]
-    for row in postponed:
-        row["schedule_state"] = "PPD"
-        row["home_team"], row["away_team"] = "Boston Bruins", "New York Rangers"
-    observation = official_grading.schedule_observation(
-        postponed, recovered[0].iloc[:0], observed_at
-    )
-    assert observation.game_status.eq("postponed").all()
-    voided = settle(pending, recovered[0].iloc[:0], observation, observed_at)
-    assert voided.outcome.tolist() == ["void", "no_play"]
+    # Both called-off codes void at the original start time.
+    for code, status in (("PPD", "postponed"), ("CNCL", "cancelled")):
+        called_off = nhl_api.scores(date(2026, 9, 29))[0]
+        for row in called_off:
+            row["schedule_state"] = code
+            row["home_team"], row["away_team"] = "Boston Bruins", "New York Rangers"
+        observation = official_grading.schedule_observation(
+            called_off, recovered[0].iloc[:0], observed_at
+        )
+        assert observation.game_status.eq(status).all()
+        voided = settle(pending, recovered[0].iloc[:0], observation, observed_at)
+        assert voided.outcome.tolist() == ["void", "no_play"]
 
     # Settlement commits even when a later forecast source fails.
     monkeypatch.setattr(publish, "pending_decisions", lambda _: overdue)

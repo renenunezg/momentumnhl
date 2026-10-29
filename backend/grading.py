@@ -3,7 +3,11 @@ ledger settles against."""
 
 import pandas as pd
 
-from backend.etl.nhl_api import FINAL_STATES, REGULAR_SEASON
+from backend.etl.nhl_api import CALLED_OFF, FINAL_STATES, REGULAR_SEASON
+
+# The fixture statuses that void a pending decision. The database's
+# settlement guard accepts these same values.
+VOID_STATUSES = tuple(CALLED_OFF.values())
 
 RESULT_COLUMNS = [
     "game_id",
@@ -68,6 +72,15 @@ def results(score_rows: list[dict], fetched_at) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=RESULT_COLUMNS)
 
 
+def _fixture_status(game: dict) -> str:
+    """A called-off fixture is postponed or cancelled; anything else keeps the
+    feed's schedule or game state, lowercased."""
+    schedule = game["schedule_state"]
+    if schedule in CALLED_OFF:
+        return CALLED_OFF[schedule]
+    return str(schedule if schedule not in (None, "OK") else game["game_state"]).lower()
+
+
 def schedule_observation(
     score_rows: list[dict], finals: pd.DataFrame, fetched_at
 ) -> pd.DataFrame:
@@ -85,17 +98,7 @@ def schedule_observation(
                 "start_date": game["start_date"],
                 "home_team": game["home_team"],
                 "away_team": game["away_team"],
-                "game_status": {
-                    "ppd": "postponed",
-                    "canceled": "cancelled",
-                }.get(
-                    status := str(
-                        game["schedule_state"]
-                        if game["schedule_state"] not in (None, "OK")
-                        else game["game_state"]
-                    ).lower(),
-                    status,
-                ),
+                "game_status": _fixture_status(game),
                 "completed": done,
                 "home_goals": int(by_id.at[game["game_id"], "home_goals"])
                 if done

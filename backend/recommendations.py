@@ -14,6 +14,7 @@ from backend.config import (
     POLICY_VERSION,
     TOTAL_MIN_EDGE_GOALS,
 )
+from backend.grading import VOID_STATUSES
 from backend.model import pricing
 from backend.model.poisson import TAIL_TOLERANCE, total_probabilities
 from backend.odds import verification
@@ -379,7 +380,7 @@ def settle(
         if pick.game_id not in fixtures.index:
             continue
         fixture = fixtures.loc[pick.game_id]
-        changed = fixture["game_status"] in ("canceled", "cancelled", "postponed")
+        changed = fixture["game_status"] in VOID_STATUSES
         changed = changed or _timestamp(fixture["start_date"]) != _timestamp(
             pick.start_date
         )

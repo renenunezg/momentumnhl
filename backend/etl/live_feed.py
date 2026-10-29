@@ -4,10 +4,9 @@ from dataclasses import dataclass
 from datetime import date
 
 from backend.etl import nhl_api
-from backend.etl.nhl_api import FINAL_STATES
+from backend.etl.nhl_api import CALLED_OFF, FINAL_STATES
 
 LIVE_STATES = ("LIVE", "CRIT")
-CALLED_OFF = ("PPD", "CNCL")
 PERIOD_SECONDS = 1200
 
 
