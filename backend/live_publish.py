@@ -39,6 +39,7 @@ START_LOOKBACK = timedelta(hours=6)
 NO_START_LIMIT = timedelta(hours=3)
 MAX_BACKOFF_SECONDS = 300
 VOLATILE_FIELDS = {"fetched_at", "worker_expires_at"}
+UNSCORED_REASON = "Score feed state could not be read"
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,22 +113,8 @@ def _point(elapsed: int, home: int, away: int, probability: float) -> dict:
     return {"s": elapsed, "h": home, "a": away, "p": round(probability, 4)}
 
 
-def score_game(
-    game: Game,
-    state: LiveState | None,
-    params: dict,
-    saved: dict | None,
-    now: datetime,
-    *,
-    board_fetched: bool,
-) -> dict:
-    """One game's serving payload from its live state and pregame anchor."""
-    opening = _probability(game, params, LiveState("live", period_type="REG"), 0)
-    # The anchor can still be republished until puck drop, so the opening
-    # point always follows it.
-    history = [_point(0, 0, 0, opening), *((saved or {}).get("history") or [])[1:]]
-    last = history[-1]["p"]
-    result = {
+def _pregame(game: Game, params: dict, history: list[dict], now: datetime) -> dict:
+    return {
         "schema_version": SCHEMA_VERSION,
         "game_id": game.game_id,
         "season": game.season,
@@ -139,9 +126,44 @@ def score_game(
         "probability_source": PROBABILITY_SOURCE,
         "model_version": params["version"],
         "anchor": game.anchor(),
+        "history": history,
+    }
+
+
+def unscored(game: Game, params: dict, saved: dict | None, now: datetime) -> dict:
+    """The game's last published state with no probability, for a state this
+    worker cannot score; the other games on the slate carry on."""
+    return {
+        **(saved or _pregame(game, params, [], now)),
+        "fetched_at": now.isoformat(),
+        "home_win_probability": None,
+        "away_win_probability": None,
+        "unavailable_reason": UNSCORED_REASON,
+    }
+
+
+def score_game(
+    game: Game,
+    state: LiveState | None,
+    params: dict,
+    saved: dict | None,
+    now: datetime,
+    *,
+    board_fetched: bool,
+) -> dict:
+    """One game's serving payload from its live state and pregame anchor.
+    Raises ValueError when the state or the anchor cannot be scored."""
+    if state is not None and state.status == "invalid":
+        raise ValueError(state.problem)
+    opening = _probability(game, params, LiveState("live", period_type="REG"), 0)
+    # The anchor can still be republished until puck drop, so the opening
+    # point always follows it.
+    history = [_point(0, 0, 0, opening), *((saved or {}).get("history") or [])[1:]]
+    last = history[-1]["p"]
+    result = {
+        **_pregame(game, params, history, now),
         "home_win_probability": last,
         "away_win_probability": 1 - last,
-        "history": history,
     }
 
     def unavailable(reason: str) -> dict:
@@ -266,14 +288,19 @@ class LivePublisher:
         states = self.fetch_states({g.game_date for g in started}) if started else {}
         changed, finished = [], []
         for game in open_games:
-            payload = score_game(
-                game,
-                states.get(game.game_id),
-                self.params,
-                self.payloads.get(game.game_id),
-                now,
-                board_fetched=game.start <= now,
-            )
+            saved = self.payloads.get(game.game_id)
+            try:
+                payload = score_game(
+                    game,
+                    states.get(game.game_id),
+                    self.params,
+                    saved,
+                    now,
+                    board_fetched=game.start <= now,
+                )
+            except ValueError as error:
+                log.warning("%s unscored: %s", game.game_id, error)
+                payload = unscored(game, self.params, saved, now)
             payload["worker_expires_at"] = self.expires_at
             self.payloads[game.game_id] = payload
             signature = _signature(payload)

@@ -1,5 +1,6 @@
 """Live game states from the NHL score feed, one call per slate date."""
 
+import re
 from dataclasses import dataclass
 from datetime import date
 
@@ -14,7 +15,7 @@ PERIOD_SECONDS = 1200
 class LiveState:
     """What the feed knows about one game; None means it did not say."""
 
-    status: str  # scheduled, live, final, or off
+    status: str  # scheduled, live, final, off, or invalid
     home_score: int = 0
     away_score: int = 0
     period: int | None = None
@@ -26,6 +27,8 @@ class LiveState:
     # strength, when the feed carries no situation.
     situation_code: str | None = None
     advantage_seconds: int | None = None
+    # Why the feed's row for this game could not be read; status is invalid.
+    problem: str | None = None
 
 
 def _whole(value) -> int | None:
@@ -49,6 +52,9 @@ def parse_game(game: dict) -> LiveState:
     period = game.get("periodDescriptor") or {}
     clock = game.get("clock") or {}
     situation = game.get("situation") or {}
+    code = situation.get("situationCode")
+    if code is not None and not re.fullmatch(r"[01][0-9][0-9][01]", str(code)):
+        raise ValueError(f"Invalid situation code {code!r} for game {game['id']}")
     intermission = bool(clock.get("inIntermission"))
     return LiveState(
         status="live",
@@ -59,15 +65,23 @@ def parse_game(game: dict) -> LiveState:
         # During a break the feed's clock counts the intermission down.
         clock_seconds=0 if intermission else _whole(clock.get("secondsRemaining")),
         intermission=intermission,
-        situation_code=situation.get("situationCode"),
+        situation_code=code,
         advantage_seconds=_whole(situation.get("secondsRemaining")),
     )
 
 
+def _read(game: dict) -> LiveState:
+    try:
+        return parse_game(game)
+    except ValueError as error:
+        return LiveState("invalid", problem=str(error))
+
+
 def fetch_states(days: set[date]) -> dict[str, LiveState]:
-    """Every game on the given slate dates, keyed by NHL game id."""
+    """Every game on the given slate dates, keyed by NHL game id. A row that
+    cannot be read marks only its own game invalid."""
     return {
-        str(game["id"]): parse_game(game)
+        str(game["id"]): _read(game)
         for day in sorted(days)
         for game in nhl_api.live_scores(day)
     }
