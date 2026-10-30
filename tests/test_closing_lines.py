@@ -67,8 +67,8 @@ def test_only_pregame_quotes_inside_the_window_qualify():
     assert close["observed_at"] == START - 15 * minutes
     assert (close["home_moneyline"], close["away_moneyline"]) == (-130, 110)
     assert (close["total"], close["over_price"]) == (6.5, -110)
-    assert (close["home_puck_line"], close["puck_home_price"]) == (-1.5, 180)
-    assert (close["home_spread"], close["spread_away_price"]) == (-1.5, -220)
+    assert (close["home_spread"], close["spread_home_price"]) == (-1.5, 180)
+    assert close["spread_away_price"] == -220
 
     earlier = {"observed_at": START - 10 * minutes, "fetched_at": START - 9 * minutes}
     later = {"observed_at": START - 5 * minutes, "fetched_at": START - 9 * minutes}

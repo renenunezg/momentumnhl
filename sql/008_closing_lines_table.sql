@@ -15,7 +15,7 @@ create table nhl.closing_lines (
   observed_at timestamptz not null,
   fetched_at timestamptz not null,
   -- The shared cross-sport shape: the home line, negative when home is
-  -- favored, with its two prices. In the NHL this is the puck line.
+  -- favored, with its two prices. In the NHL the spread is the puck line.
   home_spread float8,
   spread_home_price float8,
   spread_away_price float8,
@@ -24,10 +24,6 @@ create table nhl.closing_lines (
   under_price float8,
   home_moneyline float8,
   away_moneyline float8,
-  -- The same puck line under its own name for NHL readers.
-  home_puck_line float8,
-  puck_home_price float8,
-  puck_away_price float8,
   constraint closing_line_pregame check (observed_at <= fetched_at and fetched_at < start_date),
   constraint closing_line_prices check (
     (home_moneyline is null or
@@ -35,7 +31,6 @@ create table nhl.closing_lines (
     (away_moneyline is null or
      (abs(away_moneyline) >= 100 and abs(away_moneyline) < 'Infinity'::float8)) and
     (total is null or (total > 0 and total < 'Infinity'::float8)) and
-    (home_puck_line is null or abs(home_puck_line) < 'Infinity'::float8) and
     (home_spread is null or abs(home_spread) < 'Infinity'::float8)
   )
 );

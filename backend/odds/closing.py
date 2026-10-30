@@ -17,8 +17,8 @@ from backend.odds import partner
 POLL_SECONDS = 60
 SOURCE_PREFIX = "nhl_partner:"
 
-# The sql/ contract for nhl.closing_lines. The home spread is the puck line
-# under the shared cross-sport name.
+# The sql/ contract for nhl.closing_lines, the shape every sport shares; the
+# NHL spread is the puck line.
 CLOSING_LINE_COLUMNS = [
     "game_id",
     "season",
@@ -34,9 +34,6 @@ CLOSING_LINE_COLUMNS = [
     "under_price",
     "home_moneyline",
     "away_moneyline",
-    "home_puck_line",
-    "puck_home_price",
-    "puck_away_price",
 ]
 
 
@@ -79,9 +76,6 @@ def closing_quotes(offers: pd.DataFrame, games) -> list[dict]:
                 "under_price": quote.under_price,
                 "home_moneyline": quote.home_price,
                 "away_moneyline": quote.away_price,
-                "home_puck_line": quote.puck_line,
-                "puck_home_price": quote.home_puck_price,
-                "puck_away_price": quote.away_puck_price,
             }
         )
     return rows
