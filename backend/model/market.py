@@ -6,16 +6,10 @@ import pandas as pd
 from backend.model.pricing import american_to_decimal
 
 
-def paired_quotes(
-    predictions: pd.DataFrame, snapshots: pd.DataFrame, *, timing: str = "decision"
-) -> pd.DataFrame:
-    """One same-provider, same-fetch two-sided quote per game.
-
-    Decision quotes must exist by forecast_at. Closing quotes are diagnostic
-    only and must never be used to revise a morning forecast or its grade.
-    """
-    if timing not in ("decision", "closing"):
-        raise ValueError("Unknown quote timing")
+def paired_quotes(predictions: pd.DataFrame, snapshots: pd.DataFrame) -> pd.DataFrame:
+    """One same-provider, same-fetch two-sided quote per game, present by
+    forecast_at. Closing lines live in nhl.closing_lines and never revise a
+    forecast or its grade."""
     if predictions.game_id.duplicated().any():
         raise ValueError("Predictions must contain one row per game")
     if snapshots.empty:
@@ -23,7 +17,7 @@ def paired_quotes(
     rows = predictions.merge(snapshots, on="game_id", validate="one_to_many")
     for column in ("start_date", "forecast_at", "fetched_at", "provider_last_update"):
         rows[column] = pd.to_datetime(rows[column], utc=True)
-    cutoff = rows.forecast_at if timing == "decision" else rows.start_date
+    cutoff = rows.forecast_at
     valid = (
         (rows.forecast_at < rows.start_date)
         & (rows.fetched_at <= cutoff)
@@ -40,7 +34,6 @@ def paired_quotes(
     h = 1 / rows.home_price.map(american_to_decimal)
     a = 1 / rows.away_price.map(american_to_decimal)
     rows["market_home_probability"] = h / (h + a)
-    rows["quote_timing"] = timing
     return rows
 
 

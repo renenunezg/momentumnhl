@@ -135,7 +135,6 @@ def test_chronological_forecasts_and_external_evidence_cutoffs():
     assert len(market.paired_quotes(forecasts, quotes)) == 1
     late = quotes.assign(fetched_at=cutoff + pd.Timedelta(1, unit="h"))
     assert market.paired_quotes(forecasts, late).empty
-    assert len(market.paired_quotes(forecasts, late, timing="closing")) == 1
     stale = quotes.assign(provider_last_update=cutoff - pd.Timedelta(2, unit="D"))
     assert market.paired_quotes(forecasts, stale).empty
 

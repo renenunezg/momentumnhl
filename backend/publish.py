@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 from backend.backtest import BACKTEST_COLUMNS
 from backend.grading import RESULT_COLUMNS, SCHEDULE_COLUMNS
 from backend.model.projections import PROJECTION_COLUMNS
+from backend.odds.closing import CLOSING_LINE_COLUMNS
 from backend.odds.partner import SNAPSHOT_COLUMNS
 from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS
 
@@ -44,6 +45,7 @@ TEAM_RATINGS_COLUMNS = [
 ]
 GAME_PROJECTIONS_COLUMNS = PROJECTION_COLUMNS
 MARKET_SNAPSHOTS_COLUMNS = SNAPSHOT_COLUMNS
+CLOSING_LINES_COLUMNS = CLOSING_LINE_COLUMNS
 GAME_RESULTS_COLUMNS = RESULT_COLUMNS
 RECOMMENDATION_SCHEDULE_COLUMNS = SCHEDULE_COLUMNS
 
@@ -228,6 +230,16 @@ def publish_day(
                 )
             counts["settlements"] = len(frame)
     return counts
+
+
+def publish_closing_lines(engine, frame: pd.DataFrame) -> int:
+    """Each game's close inserts once; a game already holding one keeps it,
+    and the database refuses a late or in-play row outright."""
+    with engine.begin() as conn:
+        _insert_ignore(
+            _prepare(frame, CLOSING_LINES_COLUMNS), "closing_lines", conn, ["game_id"]
+        )
+    return len(frame)
 
 
 def publish_backtest(engine, frame: pd.DataFrame) -> int:

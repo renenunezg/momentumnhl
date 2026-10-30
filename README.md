@@ -75,7 +75,7 @@ Stacked penalties are dated from the latest one, and nothing has been compared w
 
 `live-win-probability` reads the NHL score feed once per poll for the slate, scores every game inside its puck-drop window against the forecast `nhl.game_projections` froze, and writes `nhl.live_win_probability`.
 It is read only unless `--publish` is passed, and exits when no game is left to watch.
-Its only pregame write is the closing-line archive below.
+Its only pregame write is the closing line below.
 A Supabase pg_cron job (`ops/install_live_cron.sql`) checks every five minutes from September through April and dispatches the `live win probability` workflow from 20 minutes before a puck drop, only while a game has no terminal row and no worker is alive.
 
 ## Closing lines
@@ -87,8 +87,8 @@ In the backtest the model is the pure model; in the live record `model_*` is the
 Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,134 of 5,225 games, and its closing total for 3,909, since 2022-23 has no usable closing total.
 On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.691 over 3,913 games, and the closing total's MAE is 1.87 against 1.92 over 3,909.
 
-For a live game the worker archives the partner feed to `nhl.market_snapshots` during the 15 minutes before the scheduled start, once per new feed stamp.
-The close is the freshest two-sided quote stamped in that window and fetched before the start (`nhl.live_predictions`).
+For a live game the worker reads the partner feed during the 15 minutes before the scheduled start and holds the freshest two-sided quote stamped in that window and fetched before the start.
+At the first poll after the start it writes that one quote to `nhl.closing_lines`, which the database freezes; `nhl.live_predictions` joins it.
 The feed turns to in-play lines at puck drop, so later quotes never qualify, and a game with no qualifying quote has no close: none is backfilled.
 FanDuel restamps every five minutes and DraftKings hourly, so the close is usually FanDuel's.
 
@@ -151,7 +151,7 @@ A successful cron SQL statement does not prove that GitHub accepted the HTTP dis
 ## Schema
 
 The ordered `sql/*.sql` migrations are the frontend contract.
-They define teams, ratings, projections, immutable pregame snapshots, market snapshots, official results, backtest predictions, recommendations, live win probability snapshots, and reporting views/functions.
+They define teams, ratings, projections, immutable pregame snapshots, market snapshots, closing lines, official results, backtest predictions, recommendations, live win probability snapshots, and reporting views/functions.
 Research outputs and starter inputs do not alter this schema.
 
 ## Remaining work

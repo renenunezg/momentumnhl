@@ -4,8 +4,8 @@ One score-feed call covers a slate date. None is made before a tracked
 game's scheduled puck drop or after every tracked game is terminal, and the
 worker exits as soon as nothing is left to watch. Each state is scored by the
 in-game model against the pregame goal rates in nhl.game_projections, which
-the database freezes at puck drop. The only pregame write is the archive of
-partner quotes for games about to start, kept as their closing lines.
+the database freezes at puck drop. The only pregame write is each game's
+closing line, captured from the partner feed as the game starts.
 """
 
 import hashlib
@@ -333,11 +333,9 @@ class LivePublisher:
             # A missed quote leaves that game without a close; it must never
             # cost the live games a refresh.
             try:
-                self.archive_closing(
-                    {g.game_id: g.start for g in open_games if g.start > now}, now
-                )
+                self.archive_closing(open_games, now)
             except Exception:  # noqa: BLE001
-                log.exception("Closing quote archive failed")
+                log.exception("Closing line capture failed")
         return len(self.done) < len(self.games)
 
 

@@ -48,8 +48,8 @@ HOME_ICE_LOGIT = 0.10
 MAX_OFFER_AGE_HOURS = 24
 
 # A partner quote is a closing line only when the feed stamped it this close
-# to the scheduled start: three of FanDuel's five-minute restamps. The view
-# nhl.live_predictions applies the same bound.
+# to the scheduled start: three of FanDuel's five-minute restamps. The live
+# worker selects the close here and writes one row to nhl.closing_lines.
 CLOSING_LINE_MINUTES = 15
 
 SITE_TIME_ZONE = "America/Los_Angeles"

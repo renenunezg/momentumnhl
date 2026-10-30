@@ -152,9 +152,7 @@ def main() -> None:
             archive_closing=(
                 ClosingArchiver(
                     pipeline.fetch_offers,
-                    lambda snapshot: publish.publish_day(
-                        _engine(), datetime.now(UTC), market_snapshot=snapshot
-                    ),
+                    lambda closes: publish.publish_closing_lines(_engine(), closes),
                 ).capture
                 if args.publish
                 else None
