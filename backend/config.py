@@ -11,7 +11,7 @@ PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
 MODEL_VERSION = "nhl-poisson-v1.2"
-POLICY_VERSION = "nhl-picks-v2"
+POLICY_VERSION = "nhl-picks-v2.1"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the
 # model only needs a rolling window plus a few seasons for the goal map and
@@ -38,7 +38,8 @@ MIN_PRICE_MULTIPLIER = 1.1
 MARKET_ANCHOR_W_MODEL = 0.5
 MONEYLINE_MIN_EDGE = 0.045
 # Half a goal on the blended total is the sheet's one-goal rule on the pure
-# total, because the blend halves the model's gap to the line.
+# total, because the blend halves the model's gap to the line. Since v2.1 a
+# total also needs positive expected value at its price, as a moneyline does.
 TOTAL_MIN_EDGE_GOALS = 0.5
 # The pure model under-rates home teams (51.5 percent predicted, 53.8 actual);
 # this logit shift was fitted on the 5,212 walk-forward backtest games.

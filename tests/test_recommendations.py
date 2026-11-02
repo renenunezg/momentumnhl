@@ -135,6 +135,14 @@ def test_total_needs_half_a_goal_on_the_blend_and_stale_feeds_are_skipped():
     assert close[close["market"].eq("totals")].iloc[0]["reason"] == (
         "total_within_0.5_goals"
     )
+    # The same 0.7-goal gap at a juiced -160 over (62 percent break-even)
+    # is a losing bet at the published probability.
+    juiced = offers.copy()
+    juiced.loc[0, "price"], juiced.loc[1, "price"] = -160, 130
+    _, priced = _decide(_projection(total=6.9), juiced)
+    priced = priced[priced["market"].eq("totals")].iloc[0]
+    assert priced["status"] == "no_play"
+    assert priced["reason"] == "price_below_break_even"
 
 
 def test_settlement_arithmetic():

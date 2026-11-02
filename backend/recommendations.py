@@ -256,7 +256,12 @@ def _eligible(candidate: dict, market: str) -> bool:
             candidate["probability_edge"] >= MONEYLINE_MIN_EDGE
             and candidate["expected_value_per_unit"] > 0
         )
-    return candidate["edge_points"] >= TOTAL_MIN_EDGE_GOALS
+    # The goal gap alone ignores the juice: a juiced line can clear it while
+    # the side's own probability is below break-even.
+    return (
+        candidate["edge_points"] >= TOTAL_MIN_EDGE_GOALS
+        and candidate["expected_value_per_unit"] > 0
+    )
 
 
 def decide(
@@ -328,11 +333,12 @@ def decide(
                 candidates.append(candidate)
             eligible = [c for c in candidates if _eligible(c, market)]
             if not eligible:
-                reason = (
-                    f"edge_below_{MONEYLINE_MIN_EDGE:g}"
-                    if market == "h2h"
-                    else f"total_within_{TOTAL_MIN_EDGE_GOALS:g}_goals"
-                )
+                if market == "h2h":
+                    reason = f"edge_below_{MONEYLINE_MIN_EDGE:g}"
+                elif any(c["edge_points"] >= TOTAL_MIN_EDGE_GOALS for c in candidates):
+                    reason = "price_below_break_even"
+                else:
+                    reason = f"total_within_{TOTAL_MIN_EDGE_GOALS:g}_goals"
                 rows.append(
                     _no_play(projection, market, reason, decision_at, receipts, flags)
                 )
