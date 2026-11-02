@@ -153,6 +153,8 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
             away_abbr="NYR",
             home_team="Boston Bruins",
             away_team="New York Rangers",
+            home_back_to_back=False,
+            away_back_to_back=False,
         )
     ]
 

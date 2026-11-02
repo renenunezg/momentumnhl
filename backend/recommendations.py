@@ -7,10 +7,9 @@ from datetime import timedelta
 import pandas as pd
 
 from backend.config import (
-    HOME_ICE_LOGIT,
+    BACK_TO_BACK_LOGIT,
     MARKET_ANCHOR_W_MODEL,
     MAX_OFFER_AGE_HOURS,
-    MONEYLINE_MIN_EDGE,
     POLICY_VERSION,
     TOTAL_MIN_EDGE_GOALS,
 )
@@ -73,9 +72,8 @@ SETTLEMENT_COLUMNS = [
     "result_source_at",
 ]
 PRICING_WEIGHTS = {
-    "moneyline_min_edge": MONEYLINE_MIN_EDGE,
+    "back_to_back_logit": BACK_TO_BACK_LOGIT,
     "market_anchor_w_model": MARKET_ANCHOR_W_MODEL,
-    "home_ice_logit": HOME_ICE_LOGIT,
     "total_min_edge_goals": TOTAL_MIN_EDGE_GOALS,
     "tie_split": TIE_SPLIT,
     "grid_tail_tolerance": TAIL_TOLERANCE,
@@ -251,17 +249,11 @@ def _candidate(projection, offer, market) -> dict:
 
 
 def _eligible(candidate: dict, market: str) -> bool:
-    if market == "h2h":
-        return (
-            candidate["probability_edge"] >= MONEYLINE_MIN_EDGE
-            and candidate["expected_value_per_unit"] > 0
-        )
+    if candidate["expected_value_per_unit"] <= 0:
+        return False
     # The goal gap alone ignores the juice: a juiced line can clear it while
     # the side's own probability is below break-even.
-    return (
-        candidate["edge_points"] >= TOTAL_MIN_EDGE_GOALS
-        and candidate["expected_value_per_unit"] > 0
-    )
+    return market == "h2h" or candidate["edge_points"] >= TOTAL_MIN_EDGE_GOALS
 
 
 def decide(
@@ -333,9 +325,9 @@ def decide(
                 candidates.append(candidate)
             eligible = [c for c in candidates if _eligible(c, market)]
             if not eligible:
-                if market == "h2h":
-                    reason = f"edge_below_{MONEYLINE_MIN_EDGE:g}"
-                elif any(c["edge_points"] >= TOTAL_MIN_EDGE_GOALS for c in candidates):
+                if market == "h2h" or any(
+                    c["edge_points"] >= TOTAL_MIN_EDGE_GOALS for c in candidates
+                ):
                     reason = "price_below_break_even"
                 else:
                     reason = f"total_within_{TOTAL_MIN_EDGE_GOALS:g}_goals"
@@ -343,7 +335,7 @@ def decide(
                     _no_play(projection, market, reason, decision_at, receipts, flags)
                 )
                 continue
-            key = "probability_edge" if market == "h2h" else "edge_points"
+            key = "expected_value_per_unit" if market == "h2h" else "edge_points"
             best = max(eligible, key=lambda c: (c[key], c["price"]))
             evidence = best.pop("verification_evidence")
             decision_flags, decision_receipts = dict(flags), dict(receipts)

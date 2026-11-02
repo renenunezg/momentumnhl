@@ -1,14 +1,9 @@
 """Odds arithmetic exactly as the workbook computes it, plus the market
-anchor a quoted game's published forecast moves to."""
+anchor a quoted game's published win probability moves to."""
 
 from scipy.special import expit, logit
 
-from backend.config import (
-    HOME_ICE_LOGIT,
-    KELLY_FRACTION,
-    MARKET_ANCHOR_W_MODEL,
-    MIN_PRICE_MULTIPLIER,
-)
+from backend.config import BACK_TO_BACK_LOGIT, KELLY_FRACTION, MIN_PRICE_MULTIPLIER
 
 
 def american_to_decimal(price: float) -> float:
@@ -36,16 +31,11 @@ def devig(probability_a: float, probability_b: float) -> tuple[float, float]:
     return probability_a / total, probability_b / total
 
 
-def anchored_home_probability(model_home: float, market_home: float) -> float:
-    """The model's home win probability, shifted for home ice and blended in
-    logit space with the de-vigged market consensus, which already prices it."""
-    model = logit(model_home) + HOME_ICE_LOGIT
-    return float(
-        expit(
-            MARKET_ANCHOR_W_MODEL * model
-            + (1 - MARKET_ANCHOR_W_MODEL) * logit(market_home)
-        )
-    )
+def anchored_home_probability(market_home: float, back_to_back: int) -> float:
+    """The de-vigged market consensus, shifted in logit space when one team
+    played the day before: `back_to_back` is the home team's flag minus the
+    away team's."""
+    return float(expit(logit(market_home) + BACK_TO_BACK_LOGIT * back_to_back))
 
 
 def kelly_fraction(

@@ -42,10 +42,17 @@ def _projection(home_win=0.62, total=6.9, missing=0):
     return pd.DataFrame([row])
 
 
-def _decide(projection, offers):
+def _decide(projection, offers, home_back_to_back=False, away_back_to_back=False):
     """The pipeline's order: anchor the projection to the quotes, then decide."""
+    schedule = [
+        {
+            "game_id": "2026020001",
+            "home_back_to_back": home_back_to_back,
+            "away_back_to_back": away_back_to_back,
+        }
+    ]
     anchored = anchor_to_market(
-        projection, market_consensus(projection, offers, DECISION_AT)
+        projection, market_consensus(projection, offers, DECISION_AT), schedule
     )
     return anchored, decide(anchored, offers, RECEIPTS, DECISION_AT)
 
@@ -65,30 +72,33 @@ def _offer(market, side, price, point=None, provider="DraftKings", update=None):
     }
 
 
-def test_moneyline_prices_the_market_anchor_at_four_and_a_half_points():
+def test_moneyline_prices_the_market_consensus_shifted_for_a_back_to_back():
     offers = pd.DataFrame(
         [
-            _offer("h2h", "home", -120),  # implied 54.5%, edge 3.8 points
-            _offer("h2h", "home", 105, provider="FanDuel"),  # 48.8%, edge 9.6
+            _offer("h2h", "home", -120),
+            _offer("h2h", "home", -110, provider="FanDuel"),
             _offer("h2h", "away", 100),
         ]
     )
-    published, decisions = _decide(_projection(), offers)
+    # Rested teams on both sides: the forecast is DraftKings' de-vigged 52.2%,
+    # the only two-sided quote, and no price beats it.
+    market = (120 / 220) / (120 / 220 + 0.5)
+    rested, decisions = _decide(_projection(), offers)
+    assert rested.iloc[0].home_win_prob == pytest.approx(market, abs=1e-9)
+    assert decisions[decisions["market"].eq("h2h")].iloc[0]["reason"] == (
+        "price_below_break_even"
+    )
+    # The home team played last night, so the away side moves 0.19 logit up.
+    published, decisions = _decide(_projection(), offers, home_back_to_back=True)
     published = published.iloc[0]
     h2h = decisions[decisions["market"].eq("h2h")].iloc[0]
-    # DraftKings is the only book quoting both sides, so it is the consensus:
-    # the model's 62% plus home ice, blended halfway with the de-vigged 52.2%.
-    market = (120 / 220) / (120 / 220 + 0.5)
-    blended = 0.5 * (math.log(0.62 / 0.38) + 0.10) + 0.5 * math.log(
-        market / (1 - market)
-    )
-    probability = 1 / (1 + math.exp(-blended))
+    probability = 1 - 1 / (1 + math.exp(-(math.log(market / (1 - market)) - 0.19)))
     assert h2h["status"] == "recommended"
-    assert h2h["provider"] == "FanDuel" and h2h["price"] == 105
+    assert h2h["side"] == "away" and h2h["price"] == 100
     assert h2h["win_probability"] == pytest.approx(probability, abs=1e-9)
     # The published row and the frozen pick carry one forecast: the goal
     # split moved to the anchored probability with the total unchanged.
-    assert published.home_win_prob == h2h["win_probability"]
+    assert published.away_win_prob == h2h["win_probability"]
     assert published.pure_home_win_prob == 0.62
     assert (published.home_lambda, published.away_lambda) == (
         h2h["home_lambda"],
@@ -96,9 +106,8 @@ def test_moneyline_prices_the_market_anchor_at_four_and_a_half_points():
     )
     assert published.home_lambda + published.away_lambda == pytest.approx(6.9)
     assert published.model_total == 6.9
-    assert h2h["probability_edge"] == pytest.approx(probability - 100 / 205, abs=1e-9)
-    assert h2h["expected_value_per_unit"] == pytest.approx(2.05 * probability - 1)
-    assert h2h["minimum_price"] == -113
+    assert h2h["probability_edge"] == pytest.approx(probability - 0.5, abs=1e-9)
+    assert h2h["expected_value_per_unit"] == pytest.approx(2 * probability - 1)
     assert h2h["stake_units"] == 1.0
     assert h2h["data_flags"]["market_home_probability"] == pytest.approx(market)
     totals = decisions[decisions["market"].eq("totals")].iloc[0]
@@ -154,7 +163,7 @@ def test_settlement_arithmetic():
             _offer("totals", "under", -110, 6.0),
         ]
     )
-    _, pending = _decide(_projection(total=7.2), offers)
+    _, pending = _decide(_projection(total=7.2), offers, away_back_to_back=True)
     results = pd.DataFrame(
         [{"game_id": "2026020001", "home_goals": 4, "away_goals": 2}]
     )

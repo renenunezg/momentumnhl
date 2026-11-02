@@ -62,9 +62,28 @@ def load_teams(day: date) -> tuple[pd.DataFrame, dict]:
 
 
 def fetch_schedule(day: date) -> tuple[list[dict], dict]:
-    rows, receipt = nhl_api.schedule(day)
+    """The week's games, each flagging a team that also played the day
+    before. Yesterday's scores cover the first day; the week covers the rest."""
+    rows, week = nhl_api.schedule(day)
+    previous, previous_receipt = nhl_api.scores(day - timedelta(days=1))
+    played = {
+        (r["game_date"], r[f"{side}_abbr"])
+        for r in previous + rows
+        for side in ("home", "away")
+    }
     end = day + timedelta(days=SCHEDULE_DAYS)
-    return [r for r in rows if day <= r["game_date"] < end], receipt
+    games = [r for r in rows if day <= r["game_date"] < end]
+    for game in games:
+        for side in ("home", "away"):
+            game[f"{side}_back_to_back"] = (
+                game["game_date"] - timedelta(days=1),
+                game[f"{side}_abbr"],
+            ) in played
+    receipt = store.receipt(
+        "schedule",
+        json.dumps({"week": week, "previous_day": previous_receipt}).encode(),
+    )
+    return games, receipt
 
 
 def fetch_results(
@@ -202,7 +221,7 @@ def daily(
     as_of = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     pure = project_games(schedule, ratings, league, as_of)
     projections = anchor_to_market(
-        pure, recommendations.market_consensus(pure, offers, as_of)
+        pure, recommendations.market_consensus(pure, offers, as_of), schedule
     )
     snapshot = partner.market_snapshot(offers)
     today = projections[projections["game_date"].eq(day)]

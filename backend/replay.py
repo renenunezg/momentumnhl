@@ -105,6 +105,7 @@ def forecast(path: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     projections = anchor_to_market(
         pure,
         recommendations.market_consensus(pure, offers, payload["as_of"]),
+        schedule,
     )
     decisions = recommendations.decide(
         projections[projections.game_date.eq(day)],

@@ -74,7 +74,9 @@ def project_games(
         # forecast and decision must remain the pregame versions.
         start = pd.to_datetime(game["start_date"], utc=True)
         if (pd.notna(start) and start <= cutoff) or game.get("game_state") not in (
-            None, "FUT", "PRE"
+            None,
+            "FUT",
+            "PRE",
         ):
             continue
         home, away = game["home_abbr"], game["away_abbr"]
@@ -115,13 +117,20 @@ def project_games(
     return pd.DataFrame(rows, columns=PROJECTION_COLUMNS)
 
 
-def anchor_to_market(projections: pd.DataFrame, market: dict) -> pd.DataFrame:
+def anchor_to_market(
+    projections: pd.DataFrame, market: dict, schedule: list[dict]
+) -> pd.DataFrame:
     """Publish the market-anchored forecast for every game in `market`, which
     maps a game_id to its de-vigged `home_prob`, its posted `total`, or both.
-    The win probability and the goal total each blend with their quote, then
-    the two goal rates are set to return exactly that pair on the Poisson
-    grid, so the prices, the picks, and the in-game anchor all read one
-    forecast. A side the books do not quote keeps its pure value."""
+    The win probability is the quote shifted for a back-to-back, flagged on
+    the `schedule` rows; the goal total blends with its quote. The two goal
+    rates are then set to return exactly that pair on the Poisson grid, so
+    the prices, the picks, and the in-game anchor all read one forecast. A
+    side the books do not quote keeps its pure value."""
+    back_to_back = {
+        game["game_id"]: int(game["home_back_to_back"]) - int(game["away_back_to_back"])
+        for game in schedule
+    }
     out = projections.copy()
     for index, row in projections.iterrows():
         quoted = market.get(row.game_id)
@@ -129,7 +138,9 @@ def anchor_to_market(projections: pd.DataFrame, market: dict) -> pd.DataFrame:
             continue
         target, total = row.pure_home_win_prob, row.pure_model_total
         if "home_prob" in quoted:
-            target = pricing.anchored_home_probability(target, quoted["home_prob"])
+            target = pricing.anchored_home_probability(
+                quoted["home_prob"], back_to_back[row.game_id]
+            )
         if "total" in quoted:
             total = (
                 MARKET_ANCHOR_W_MODEL * total
