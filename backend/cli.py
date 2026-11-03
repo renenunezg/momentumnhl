@@ -32,7 +32,6 @@ def main() -> None:
         "ingest-goalies", help="cache listed goalie game logs"
     )
     goalie_ingest.add_argument("--seasons", nargs="+", type=int, required=True)
-    sub.add_parser("fit-goal-map", help="refit the goal map on the configured seasons")
     sub.add_parser(
         "ingest-play-by-play", help="cache play-by-play for every backtest game"
     )
@@ -171,15 +170,6 @@ def main() -> None:
 
         seasons = args.seasons or range(HISTORY_START_SEASON, date.today().year + 1)
         print(json.dumps(moneypuck.ingest(seasons)))
-    elif args.command == "fit-goal-map":
-        from backend.etl import moneypuck
-        from backend.model import goal_map
-
-        fitted = goal_map.fit(moneypuck.read_games(range(HISTORY_START_SEASON, 2100)))
-        goal_map.save(fitted)
-        print(json.dumps({k: fitted[k] for k in ("rows", "seasons")}))
-        for side in ("for", "against"):
-            print(side, "r_squared", round(fitted[side]["r_squared"], 4))
     elif args.command == "ratings":
         from backend import pipeline
 

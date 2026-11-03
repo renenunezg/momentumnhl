@@ -9,9 +9,9 @@ import pandas as pd
 from backend.config import BACKTEST_SEASONS
 from backend.etl import nhl_api, store
 from backend.etl.nhl_api import FINAL_STATES
-from backend.model import goal_map as goal_map_model
 from backend.model.projections import project_games
 from backend.model.ratings import InsufficientHistory, team_ratings
+from backend.model.signals import FRANCHISE_ALIASES, team_games
 from backend.odds.espn import CLOSING_COLUMNS
 
 PREDICTION_COLUMNS = [
@@ -63,18 +63,13 @@ def official_results(games: pd.DataFrame, season: int) -> pd.DataFrame:
 def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
     rows, excluded = [], []
     eligible = 0
+    history = team_games(games)
     for season in seasons:
-        training_seasons = sorted(
-            games.loc[games["season"] < season, "season"].unique()
-        )
-        if not training_seasons:
-            raise ValueError(f"No prior seasons to fit the goal map for {season}")
-        fitted_map = goal_map_model.fit(games, training_seasons)
         fixtures = official_results(games, season)
         eligible += len(fixtures)
         for day, slate in fixtures.groupby("game_date"):
             try:
-                ratings, league = team_ratings(games, day, fitted_map)
+                ratings, league = team_ratings(history, day)
             except InsufficientHistory as exc:
                 excluded.extend(
                     {"game_id": str(g), "date": str(day), "reason": str(exc)}
@@ -87,14 +82,18 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
                     "season": season,
                     "game_date": day,
                     "start_date": None,
-                    "home_abbr": g.home_abbr,
-                    "away_abbr": g.away_abbr,
+                    "home_abbr": FRANCHISE_ALIASES.get(g.home_abbr, g.home_abbr),
+                    "away_abbr": FRANCHISE_ALIASES.get(g.away_abbr, g.away_abbr),
                     "home_team": g.home_abbr,
                     "away_team": g.away_abbr,
                 }
                 for g in slate.itertuples(index=False)
             ]
             projected = project_games(schedule, ratings, league, day)
+            excluded.extend(
+                {"game_id": str(g), "date": str(day), "reason": "unrated_team"}
+                for g in set(slate.game_id) - set(projected.game_id)
+            )
             excluded.extend(
                 {
                     "game_id": str(g),

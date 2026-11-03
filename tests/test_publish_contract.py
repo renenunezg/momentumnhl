@@ -116,7 +116,6 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
 
     from backend import backtest, replay
     from backend.etl import moneypuck, store
-    from backend.model import goal_map
     from backend.model.ratings import InsufficientHistory
     from backend.odds.partner import OFFER_COLUMNS
 
@@ -128,7 +127,7 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
                 team_abbr=team,
                 venue=venue,
                 season=2025,
-                game_id=str(i),
+                game_id=f"{venue}{i}",
                 game_date=date(2026, 4, 1) + timedelta(days=i),
                 situation=situation,
                 toi=900.0,
@@ -212,7 +211,6 @@ def test_daily_forecast_replays_offline_from_retained_inputs(tmp_path, monkeypat
         ]
     )
     monkeypatch.setattr(backtest, "official_results", lambda *a: fixtures)
-    monkeypatch.setattr(backtest.goal_map_model, "fit", lambda *a: goal_map.load())
 
     def short(*a):
         raise InsufficientHistory("no pregame history")

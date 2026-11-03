@@ -18,7 +18,7 @@ from backend.etl import store
 from backend.model.projections import anchor_to_market, project_games
 from backend.model.ratings import ratings_from_windows
 
-VERSION = 1
+VERSION = 2
 SOURCE_ROOT = Path(__file__).parent.resolve()
 RUNTIME_PACKAGES = ("numpy", "pandas", "scipy")
 
@@ -41,7 +41,7 @@ def archive(
     code_revision: str | None,
     model_version: str,
     windows: pd.DataFrame,
-    goal_map: dict,
+    league: dict,
     teams: pd.DataFrame,
     schedule: list[dict],
     offers: pd.DataFrame,
@@ -64,7 +64,7 @@ def archive(
         "day": str(day),
         "model_version": model_version,
         "windows": _table(windows),
-        "goal_map": goal_map,
+        "league": league,
         "teams": _table(teams),
         "schedule": json.loads(json.dumps(schedule, default=str)),
         "offers": _table(offers),
@@ -91,7 +91,7 @@ def forecast(path: Path) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             raise ValueError(f"Replay requires the recorded source revision: {name}")
     day = date.fromisoformat(payload["day"])
     windows = pd.read_json(io.StringIO(payload["windows"]), orient="table")
-    ratings, league = ratings_from_windows(windows, day, payload["goal_map"])
+    ratings, league = ratings_from_windows(windows, payload["league"], day)
     if not ratings.model_version.eq(payload["model_version"]).all():
         raise ValueError("Replay requires the archived model version")
     teams = pd.read_json(io.StringIO(payload["teams"]), orient="table")

@@ -17,10 +17,9 @@ from backend.config import (
     STATIC_DIR,
 )
 from backend.etl import moneypuck, nhl_api, store
-from backend.features.windows import venue_windows
-from backend.model import goal_map
 from backend.model.projections import anchor_to_market, project_games
-from backend.model.ratings import ratings_from_windows, season_of
+from backend.model.ratings import pregame_windows, ratings_from_windows, season_of
+from backend.model.signals import team_games
 from backend.odds import espn, partner, verification
 
 SCHEDULE_DAYS = 7
@@ -143,15 +142,14 @@ def grade_pending(day: date, engine) -> dict:
 
 
 def build_ratings(day: date, teams: pd.DataFrame):
-    """Returns (ratings, league, windows, goal map); the last two are the
-    inputs a forecast replay retains."""
-    games = moneypuck.read_games(_seasons(day))
-    windows = venue_windows(games[games.season.ge(season_of(day) - 1)], day)
-    coefficients = goal_map.load()
-    ratings, league = ratings_from_windows(windows, day, coefficients)
+    """Returns (ratings, league, windows, league means); the last two are
+    the inputs a forecast replay retains."""
+    rows = team_games(moneypuck.read_games(_seasons(day)))
+    windows, means = pregame_windows(rows, day)
+    ratings, league = ratings_from_windows(windows, means, day)
     names = dict(zip(teams["team_abbr"], teams["team"]))
     ratings["team"] = ratings["team_abbr"].map(names).fillna(ratings["team_abbr"])
-    return ratings, league, windows, coefficients
+    return ratings, league, windows, means
 
 
 def fetch_offers(
@@ -217,7 +215,7 @@ def daily(
     receipts["odds"] = store.receipt(
         "partner_odds", json.dumps(odds_receipts, sort_keys=True).encode()
     )
-    ratings, league, windows, coefficients = build_ratings(day, teams)
+    ratings, league, windows, means = build_ratings(day, teams)
     as_of = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     pure = project_games(schedule, ratings, league, as_of)
     projections = anchor_to_market(
@@ -239,7 +237,7 @@ def daily(
         code_revision=os.getenv("GITHUB_SHA"),
         model_version=str(ratings.model_version.iloc[0]),
         windows=windows,
-        goal_map=coefficients,
+        league=means,
         teams=teams,
         schedule=schedule,
         offers=offers,

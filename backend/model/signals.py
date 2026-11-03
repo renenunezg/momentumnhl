@@ -39,6 +39,8 @@ class Specification:
 
 
 SIGNALS = ["gf", "ga", "xgf", "xga", "reg_gf", "reg_ga", "reg_xgf", "reg_xga"]
+# Arizona's history carries over to Utah.
+FRANCHISE_ALIASES = {"ARI": "UTA"}
 
 
 def team_games(games: pd.DataFrame) -> pd.DataFrame:
@@ -48,7 +50,7 @@ def team_games(games: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Duplicate team-game inputs")
     if not np.isfinite(rows[["gf", "ga", "xgf", "xga", "toi"]]).all().all():
         raise ValueError("Missing xG inputs; refresh the MoneyPuck cache")
-    rows["team_abbr"] = rows.team_abbr.replace({"ARI": "UTA"})
+    rows["team_abbr"] = rows.team_abbr.replace(FRANCHISE_ALIASES)
     # MoneyPuck excludes the shootout goal. In overtime a non-tied final
     # contributes one extra goal for the winner. xG is prorated to 60 minutes
     # because team-level rows do not identify the overtime shots separately.
@@ -87,7 +89,7 @@ def prepare(games: pd.DataFrame, fixtures: pd.DataFrame) -> pd.DataFrame:
             left = out[["game_id", "game_date", f"{side}_abbr"]].rename(
                 columns={f"{side}_abbr": "team_abbr"}
             )
-            left["team_abbr"] = left.team_abbr.replace({"ARI": "UTA"})
+            left["team_abbr"] = left.team_abbr.replace(FRANCHISE_ALIASES)
             if pool == "venue":
                 left["venue"] = side
             merged = pd.merge_asof(

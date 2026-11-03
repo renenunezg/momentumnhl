@@ -10,18 +10,26 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
-MODEL_VERSION = "nhl-poisson-v1.3"
+MODEL_VERSION = "nhl-poisson-v2.0"
 POLICY_VERSION = "nhl-picks-v3"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the
-# model only needs a rolling window plus a few seasons for the goal map and
-# the backtest.
+# model needs a rolling window, league means from completed seasons, and the
+# backtest.
 HISTORY_START_SEASON = 2021
-GOAL_MAP_SEASONS = (2021, 2022, 2023, 2024)
 BACKTEST_SEASONS = (2022, 2023, 2024, 2025)
 
-# Sheet parameters, kept as the workbook had them.
-WINDOW_GAMES = 25
+# Since v2.0 a team's strength is its last 50 games at either venue, half
+# goals and half MoneyPuck xG, each shrunk by 10 league-average games. These
+# are the settings backend/validation.py selected on 2023-24 log loss among
+# goal/xG weights, priors and venue pooling, kept with v1's overtime
+# treatment. Against the v1 sheet model they lowered 2025-26 log loss by
+# 0.022 (95% interval 0.011 to 0.034) and total MAE by 0.053 (0.025 to 0.082).
+# Venue windows, recency decay and a rolling league scoring rate did not
+# improve on them.
+WINDOW_GAMES = 50
+PRIOR_GAMES = 10
+XG_WEIGHT = 0.5
 MIN_WINDOW_GAMES = 10
 GRID_MAX_GOALS = 10
 KELLY_FRACTION = 0.10

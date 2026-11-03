@@ -1,23 +1,25 @@
 # momentumnhl
 
 NHL win probabilities, goal totals, and partner-book picks from a Poisson goal model.
-The production model is a Python port of a Google Sheets model: each team's last 25 games at a venue, split by situation, feed a linear goal map.
+The production model started as a Python port of a Google Sheets model; since `nhl-poisson-v2.0` each team's last 50 games of goals and MoneyPuck xGoals, shrunk toward the league average, set its strengths.
 Attack and defense strengths are ratios to the league average; a matchup multiplies them into expected goals for each side.
 Outputs publish to the `nhl` schema of a Postgres database that a separate web frontend ([renenunez.dev](https://renenunez.dev), repository `momentumweb`) reads.
 
 ## Production model
 
-1. **Windows.** MoneyPuck's team game-by-game rows are summed over each team's last 25 regular-season games at home and on the road, by situation: 5v5, 5v4, 4v5, and other play.
-   Windows end the day before the run and reach into the previous season.
+1. **Windows.** MoneyPuck's team game-by-game rows are summed over each team's last 50 regular-season games at either venue: goals for and against, including overtime but not the shootout, and xGoals for and against.
+   Windows end the day before the run and reach into the previous season; Arizona's games count for Utah.
    A window under 10 games flags the team and blocks pricing.
-2. **Goal map.** Goals per 60 minutes is a linear function of ten shot-quality rates, fitted on 2021 through 2024 team-seasons and stored in `backend/data_static/goal_map.json`.
-   The fit is close to an identity on observed goals; the experimental model evaluates MoneyPuck's actual xGoals instead.
-3. **Ratings.** Attack is expected goals for divided by the league average at that venue; defense uses goals against.
+2. **Ratings.** Attack averages two ratios to the league per-game mean, goals for and xGoals for, each shrunk by adding 10 league-average games; defense does the same with goals and xGoals against.
+   League means come from every completed season since 2021-22.
+   Strengths are pooled across venues, so the home and away columns of a rating hold the same strength, and home ice comes from the league's home and road scoring rates.
    Rating is (home attack + away attack) minus (home defense + away defense).
-4. **Matchup.** Home expected goals multiply home attack, opponent away defense, and league home goals; the away side mirrors it.
+   Version 1 summed 25-game venue windows by situation through a linear goal map of ten shot-quality rates; against it, version 2 lowered 2025-26 log loss from 0.709 to 0.686 and total MAE from 1.896 to 1.843 (paired game-day bootstrap intervals exclude zero for both).
+   Venue windows, recency decay, and a rolling league scoring rate did not improve on version 2.
+3. **Matchup.** Home expected goals multiply home attack, opponent defense, and league home goals; the away side mirrors it.
    Version 1.1 widens the Poisson grid to a tail tolerance of 1e-12 and normalizes its mass.
    Production retains equal tie allocation and rates that already include overtime; explicit regulation-to-final overtime treatment is experimental.
-5. **Prices and picks.** Lines come from the NHL's partner feed: DraftKings in the US and FanDuel in Canada.
+4. **Prices and picks.** Lines come from the NHL's partner feed: DraftKings in the US and FanDuel in Canada.
    Quotes need a provider timestamp within 24 hours or an exact, independently corroborated DraftKings public listing observed within 15 minutes of publication.
    A game the books quote publishes a market-anchored forecast.
    The win probability is the de-vigged consensus of the books quoting both moneyline sides, moved 0.19 logit against a team that played the day before (the pure model adds nothing to the consensus; the open under-prices the back-to-back); the model total blends at a model weight of 0.5 with the median line of the books quoting both sides of a total.
@@ -28,14 +30,14 @@ Outputs publish to the `nhl` schema of a Postgres database that a separate web f
    The weight and gates are a product decision: against 2022 to 2025 opening and closing lines the pure model added no information beyond the price for either market, and estimated EV does not establish a real betting advantage.
    Stakes are flat one unit; fractional Kelly is informational.
    Decisions freeze at first publication.
-6. **Grading.** Official NHL final scores, including the shootout-deciding goal, settle decisions the next morning.
+5. **Grading.** Official NHL final scores, including the shootout-deciding goal, settle decisions the next morning.
    A moved, postponed or cancelled game voids its decision.
 
 ## Chronological evaluation and candidate forecasts
 
-The original-model backtest refits its goal map using only seasons before each evaluated season, with rolling inputs strictly before each game date.
-Previously published backtests used a fixed map fitted on overlapping years and should not be described as fully out of sample.
-Running a local evaluation does not replace those published rows.
+The production backtest uses league means from seasons before each evaluated season and rolling inputs strictly before each game date.
+Backtests published before version 2 used the goal map, whose earliest form was fitted on overlapping years.
+Running a local evaluation does not replace the published rows.
 
 `validate` compares goals, MoneyPuck xG and their mixture; league shrinkage; pooled versus venue-specific windows; overtime; prior-season probability and total calibration; and inferred goalie usage.
 2022-23 supplies the first out-of-season forecasts for calibration, 2023-24 and 2024-25 select specifications, and 2025-26 evaluates the locked choices.
@@ -84,8 +86,8 @@ Closing lines are a market benchmark for forecast accuracy: they grade nothing a
 `nhl.forecast_accuracy` reports the de-vigged closing moneyline's log loss and the closing total's MAE beside the model's figures on the same games, for each season and overall.
 In the backtest the model is the pure model; in the live record `model_*` is the published market-anchored forecast and `pure_model_*` the pure model.
 
-Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,134 of 5,225 games, and its closing total for 3,909, since 2022-23 has no usable closing total.
-On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.691 over 3,913 games, and the closing total's MAE is 1.87 against 1.92 over 3,909.
+Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,157 of 5,248 games, and its closing total for 3,932, since 2022-23 has no usable closing total.
+On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.673 over 3,936 games, and the closing total's MAE is 1.87 against 1.86 over 3,932.
 
 For a live game the worker reads the partner feed during the 15 minutes before the scheduled start and holds the freshest two-sided quote stamped in that window and fetched before the start.
 At the first poll after the start it writes that one quote to `nhl.closing_lines`, which the database freezes; `nhl.live_predictions` joins it.
@@ -158,12 +160,12 @@ Research outputs and starter inputs do not alter this schema.
 
 Verify a full published-and-graded production cycle after the repaired dispatch authorization.
 Collect timestamped pregame market and starter evidence before evaluating their incremental value in live conditions.
-Candidate promotion, coherent calibrated bet pricing, period-specific overtime inputs and puck-line pricing remain separate work.
+Version 2 promoted the candidate's uncalibrated strengths with v1's overtime treatment; calibrated bet pricing, period-specific overtime inputs and puck-line pricing remain separate work.
 
 
 Settlement runs before pregame ingestion and includes dates from every unresolved ledger entry, even outside the routine three-day result window.
 Fresh odds or MoneyPuck failures do not roll back already committed settlements.
-Production workflow artifacts retain compact `forecast_replay` source bodies under `receipts/sources`, with normalized pregame windows, fitted coefficients, schedule, offers, and receipt identities.
+Production workflow artifacts retain compact `forecast_replay` source bodies under `receipts/sources`, with the pregame team windows, league means, schedule, offers, and receipt identities.
 Use `backend.replay.forecast(Path(...))` on the retained gzip body to reconstruct ratings, projections, and decisions offline with the matching source revision.
 The full MoneyPuck download is identified by its digest; replay uses the sufficient normalized windows rather than treating a later download as an earlier vintage.
 Backtest parquet metadata includes eligible and evaluated counts plus excluded game IDs and reasons.
