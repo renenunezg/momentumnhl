@@ -17,12 +17,14 @@ Outputs publish to the `nhl` schema of a Postgres database that a separate web f
    Version 1 summed 25-game venue windows by situation through a linear goal map of ten shot-quality rates; against it, version 2 lowered 2025-26 log loss from 0.709 to 0.686 and total MAE from 1.896 to 1.843 (paired game-day bootstrap intervals exclude zero for both).
    Venue windows, recency decay, and a rolling league scoring rate did not improve on version 2.
 3. **Matchup.** Home expected goals multiply home attack, opponent defense, and league home goals; the away side mirrors it.
+   Since version 2.1 a team on the second night of a back-to-back scores exp(-0.07) times its rate and its opponent exp(+0.05) times theirs (Poisson fits on 5,248 games: -0.071 and +0.049, each +/- 0.015); fitted on earlier seasons only they lowered 2023-24 log loss by 0.0027, and the backtest applies the full-sample values.
    Version 1.1 widens the Poisson grid to a tail tolerance of 1e-12 and normalizes its mass.
    Production retains equal tie allocation and rates that already include overtime; explicit regulation-to-final overtime treatment is experimental.
 4. **Prices and picks.** Lines come from the NHL's partner feed: DraftKings in the US and FanDuel in Canada.
    Quotes need a provider timestamp within 24 hours or an exact, independently corroborated DraftKings public listing observed within 15 minutes of publication.
    A game the books quote publishes a market-anchored forecast.
-   The win probability is the de-vigged consensus of the books quoting both moneyline sides, moved 0.19 logit against a team that played the day before (the pure model adds nothing to the consensus; the open under-prices the back-to-back); the model total blends at a model weight of 0.5 with the median line of the books quoting both sides of a total.
+   The win probability is the de-vigged consensus of the books quoting both moneyline sides, moved 0.19 logit against a team that played the day before (the pure model adds nothing to the consensus; the open under-prices the back-to-back); the model total blends at a model weight of 0.5 with the market's total: for each book quoting both sides of a total, the mean of the Poisson goal total that gives its de-vigged over probability at its line, then the median over books.
+   Reading the juice this way needs no fitted parameter; at the 2025-26 open it beat the bare line (MAE 1.856 against 1.882) and lowered the blend's MAE by 0.012.
    The two goal rates are then set so the Poisson grid returns exactly that probability and total, so the published goal rates, win probability, total, fair prices, the picks, and the in-game anchor are one forecast; `pure_home_win_prob`, `pure_model_total`, `market_home_prob`, and `market_total` keep the inputs beside it.
    The partner feed prices only the day's slate, so games further out stay pure until their game-day run.
    Picks (`nhl-picks-v3`) price the published forecast: a moneyline needs positive expected value at its price, and a total needs half a goal between the published total and the line, which is the sheet's one-goal rule on the pure total, and positive expected value at its price.
@@ -87,7 +89,7 @@ Closing lines are a market benchmark for forecast accuracy: they grade nothing a
 In the backtest the model is the pure model; in the live record `model_*` is the published market-anchored forecast and `pure_model_*` the pure model.
 
 Backtest closes come from a one-time cached pull of ESPN's odds API (`backend/data/raw/espn_odds/`, never refreshed and never used for pricing): one book's two-way closing moneyline per game for 5,157 of 5,248 games, and its closing total for 3,932, since 2022-23 has no usable closing total.
-On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.673 over 3,936 games, and the closing total's MAE is 1.87 against 1.86 over 3,932.
+On 2023-24 through 2025-26 the closing moneyline's log loss is 0.665 against the model's 0.671 over 3,936 games, and the closing total's MAE is 1.87 against 1.86 over 3,932.
 
 For a live game the worker reads the partner feed during the 15 minutes before the scheduled start and holds the freshest two-sided quote stamped in that window and fetched before the start.
 At the first poll after the start it writes that one quote to `nhl.closing_lines`, which the database freezes; `nhl.live_predictions` joins it.

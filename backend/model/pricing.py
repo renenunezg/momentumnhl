@@ -1,7 +1,11 @@
 """Odds arithmetic exactly as the workbook computes it, plus the market
-anchor a quoted game's published win probability moves to."""
+anchors a quoted game's published win probability and total move to."""
 
+import math
+
+from scipy.optimize import brentq
 from scipy.special import expit, logit
+from scipy.stats import poisson
 
 from backend.config import BACK_TO_BACK_LOGIT, KELLY_FRACTION, MIN_PRICE_MULTIPLIER
 
@@ -36,6 +40,20 @@ def anchored_home_probability(market_home: float, back_to_back: int) -> float:
     played the day before: `back_to_back` is the home team's flag minus the
     away team's."""
     return float(expit(logit(market_home) + BACK_TO_BACK_LOGIT * back_to_back))
+
+
+def implied_total(line: float, over_price: float, under_price: float) -> float:
+    """The mean goal total at which a Poisson total gives the de-vigged over
+    probability, so the juice moves the market's total off its line. A push
+    is excluded, as a two-way price excludes it."""
+    over = devig(implied_probability(over_price), implied_probability(under_price))[0]
+
+    def gap(mean: float) -> float:
+        above = poisson.sf(math.floor(line), mean)
+        below = poisson.cdf(math.ceil(line) - 1, mean)
+        return above / (above + below) - over
+
+    return float(brentq(gap, 0.05, 30.0, xtol=1e-12))
 
 
 def kelly_fraction(

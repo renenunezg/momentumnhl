@@ -10,7 +10,7 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
-MODEL_VERSION = "nhl-poisson-v2.0"
+MODEL_VERSION = "nhl-poisson-v2.1"
 POLICY_VERSION = "nhl-picks-v3"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the
@@ -31,6 +31,15 @@ WINDOW_GAMES = 50
 PRIOR_GAMES = 10
 XG_WEIGHT = 0.5
 MIN_WINDOW_GAMES = 10
+# Since v2.1 a team on the second night of a back-to-back scores exp(-0.07)
+# times its rate and its opponent exp(+0.05) times theirs: Poisson fits on
+# the v2 goal rates over 2022-23 to 2025-26 (5,248 games) give -0.071 +/-
+# 0.015 and +0.049 +/- 0.015. Fitted on earlier seasons only, they lowered
+# 2023-24 log loss by 0.0027 (95% interval 0.0007 to 0.0048); on 2025-26 the
+# gain was 0.0011 and its interval included zero. The backtest applies these
+# full-sample values, so it is in-sample for these two parameters.
+BACK_TO_BACK_OWN_GOALS = -0.07
+BACK_TO_BACK_OPPONENT_GOALS = 0.05
 GRID_MAX_GOALS = 10
 KELLY_FRACTION = 0.10
 MIN_PRICE_MULTIPLIER = 1.1
@@ -45,10 +54,15 @@ MIN_PRICE_MULTIPLIER = 1.1
 # the open, picking every side with positive expected value went 325-230,
 # +5.3 +/- 4.0 percent, hitting 58.6 percent against 58.4 expected.
 BACK_TO_BACK_LOGIT = -0.19
-# The goal total still blends halfway with the posted total; that weight and
+# The goal total still blends halfway with the market's total; that weight and
 # the half-goal gate are Rene's product decision, not fitted estimates, and
 # the backtest shows no edge for totals at any setting. Do not retune them
-# without Rene's approval.
+# without Rene's approval. Since v2.1 the market's total is each book's line
+# and over/under prices read as the mean of a Poisson goal total (the
+# distribution the totals picks are priced on), the median over books. With
+# no fitted parameter it beat the bare line at the 2025-26 open (MAE 1.856
+# against 1.882), and in the blend it lowered 2025-26 MAE by 0.012 (95%
+# interval 0.005 to 0.018); on 2023-24 the gain was 0.002.
 MARKET_ANCHOR_W_MODEL = 0.5
 # Half a goal on the blended total is the sheet's one-goal rule on the pure
 # total, because the blend halves the model's gap to the line. Since v2.1 a

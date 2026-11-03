@@ -155,8 +155,9 @@ def market_consensus(
     """What the books say about each game, from the offers a pick could use:
     `home_prob` is the de-vigged home win probability averaged over every
     book quoting both moneyline sides in one fetch, and `total` the median
-    line of the books quoting both sides of one total. A game or market no
-    book quotes two-sided is absent."""
+    over the books quoting both sides of one total of the mean total their
+    line and prices imply. A game or market no book quotes two-sided is
+    absent."""
     decision_at = _timestamp(decision_at)
     consensus = {}
     for projection in projections.itertuples(index=False):
@@ -175,7 +176,13 @@ def market_consensus(
                     continue
                 if market == "totals":
                     if a["point"].iloc[0] == b["point"].iloc[0]:
-                        totals.append(float(a["point"].iloc[0]))
+                        totals.append(
+                            pricing.implied_total(
+                                float(a["point"].iloc[0]),
+                                float(a["price"].iloc[0]),
+                                float(b["price"].iloc[0]),
+                            )
+                        )
                     continue
                 home_probs.append(
                     pricing.devig(

@@ -3,10 +3,17 @@ strengths and the league venue averages, then win probabilities, fair prices,
 the minimum acceptable price, and the model total. A game the books quote is
 then anchored to the market."""
 
+import math
+
 import pandas as pd
 from scipy.optimize import brentq
 
-from backend.config import MARKET_ANCHOR_W_MODEL, MODEL_VERSION
+from backend.config import (
+    BACK_TO_BACK_OPPONENT_GOALS,
+    BACK_TO_BACK_OWN_GOALS,
+    MARKET_ANCHOR_W_MODEL,
+    MODEL_VERSION,
+)
 from backend.model import pricing
 from backend.model.poisson import matchup
 
@@ -60,6 +67,14 @@ def _priced(home_lambda: float, away_lambda: float) -> dict:
     }
 
 
+def _rested(own: int, opponent: int) -> float:
+    """Goal-rate multiplier for a side whose team (`own`) or opponent played
+    the day before."""
+    return math.exp(
+        BACK_TO_BACK_OWN_GOALS * own + BACK_TO_BACK_OPPONENT_GOALS * opponent
+    )
+
+
 def project_games(
     schedule_rows: list[dict], ratings: pd.DataFrame, league: dict, as_of
 ) -> pd.DataFrame:
@@ -82,15 +97,21 @@ def project_games(
         home, away = game["home_abbr"], game["away_abbr"]
         if home not in by_team.index or away not in by_team.index:
             continue
+        home_tired, away_tired = (
+            int(game["home_back_to_back"]),
+            int(game["away_back_to_back"]),
+        )
         home_lambda = float(
             by_team.at[home, "home_attack"]
             * by_team.at[away, "away_defense"]
             * league["home_xgf"]
+            * _rested(home_tired, away_tired)
         )
         away_lambda = float(
             by_team.at[away, "away_attack"]
             * by_team.at[home, "home_defense"]
             * league["away_xgf"]
+            * _rested(away_tired, home_tired)
         )
         priced = _priced(home_lambda, away_lambda)
         rows.append(
@@ -121,7 +142,8 @@ def anchor_to_market(
     projections: pd.DataFrame, market: dict, schedule: list[dict]
 ) -> pd.DataFrame:
     """Publish the market-anchored forecast for every game in `market`, which
-    maps a game_id to its de-vigged `home_prob`, its posted `total`, or both.
+    maps a game_id to its de-vigged `home_prob`, its juice-implied `total`, or
+    both.
     The win probability is the quote shifted for a back-to-back, flagged on
     the `schedule` rows; the goal total blends with its quote. The two goal
     rates are then set to return exactly that pair on the Poisson grid, so

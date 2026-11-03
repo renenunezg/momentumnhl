@@ -3,6 +3,8 @@ the day before, then the same matchup math the live run uses. The replay is
 model-only; the published rows also carry each game's historical closing
 line as a market benchmark, which no forecast ever sees."""
 
+from datetime import timedelta
+
 import numpy as np
 import pandas as pd
 
@@ -67,6 +69,11 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
     for season in seasons:
         fixtures = official_results(games, season)
         eligible += len(fixtures)
+        played = {
+            (row.game_date, team)
+            for row in fixtures.itertuples(index=False)
+            for team in (row.home_abbr, row.away_abbr)
+        }
         for day, slate in fixtures.groupby("game_date"):
             try:
                 ratings, league = team_ratings(history, day)
@@ -86,6 +93,10 @@ def run(games: pd.DataFrame, seasons=BACKTEST_SEASONS) -> pd.DataFrame:
                     "away_abbr": FRANCHISE_ALIASES.get(g.away_abbr, g.away_abbr),
                     "home_team": g.home_abbr,
                     "away_team": g.away_abbr,
+                    "home_back_to_back": (day - timedelta(days=1), g.home_abbr)
+                    in played,
+                    "away_back_to_back": (day - timedelta(days=1), g.away_abbr)
+                    in played,
                 }
                 for g in slate.itertuples(index=False)
             ]

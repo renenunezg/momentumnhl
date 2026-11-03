@@ -6,6 +6,7 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from backend.model.pricing import implied_total
 from backend.model.projections import PROJECTION_COLUMNS, anchor_to_market
 from backend.recommendations import decide, market_consensus, settle
 
@@ -130,13 +131,16 @@ def test_total_needs_half_a_goal_on_the_blend_and_stale_feeds_are_skipped():
     )
     published, decisions = _decide(_projection(total=6.9), offers)
     totals = decisions[decisions["market"].eq("totals")].iloc[0]
-    # The published total is halfway from the model's 6.9 to the posted 5.5,
-    # and the frozen pick carries that same total.
-    assert published.iloc[0].model_total == pytest.approx(6.2)
+    # Even prices on 5.5 imply a Poisson mean of 5.670; the published total is
+    # halfway from the model's 6.9 to it, and the frozen pick carries it.
+    market = implied_total(5.5, -110, -110)
+    assert market == pytest.approx(5.6702, abs=1e-4)
+    assert published.iloc[0].market_total == pytest.approx(market)
+    assert published.iloc[0].model_total == pytest.approx(0.5 * 6.9 + 0.5 * market)
     assert totals["model_total"] == published.iloc[0].model_total
     assert published.iloc[0].pure_model_total == 6.9
     assert totals["status"] == "recommended" and totals["side"] == "over"
-    assert totals["edge_points"] == pytest.approx(0.7)
+    assert totals["edge_points"] == pytest.approx(0.5 * 6.9 + 0.5 * market - 5.5)
     assert totals["market_total"] == 5.5
     h2h = decisions[decisions["market"].eq("h2h")].iloc[0]
     assert h2h["reason"] == "stale_offer"
@@ -144,11 +148,12 @@ def test_total_needs_half_a_goal_on_the_blend_and_stale_feeds_are_skipped():
     assert close[close["market"].eq("totals")].iloc[0]["reason"] == (
         "total_within_0.5_goals"
     )
-    # The same 0.7-goal gap at a juiced -160 over (62 percent break-even)
-    # is a losing bet at the published probability.
+    # A juiced -160 over (62 percent break-even) moves the market's total to
+    # 6.2; a model at 6.2 then clears the gap by 0.7 goals but its 59 percent
+    # over is a losing bet.
     juiced = offers.copy()
     juiced.loc[0, "price"], juiced.loc[1, "price"] = -160, 130
-    _, priced = _decide(_projection(total=6.9), juiced)
+    _, priced = _decide(_projection(total=6.2), juiced)
     priced = priced[priced["market"].eq("totals")].iloc[0]
     assert priced["status"] == "no_play"
     assert priced["reason"] == "price_below_break_even"
