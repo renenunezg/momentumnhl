@@ -29,6 +29,9 @@ SNAPSHOT_COLUMNS = [
     "puck_line",
     "home_puck_price",
     "away_puck_price",
+    "home_regulation_price",
+    "draw_price",
+    "away_regulation_price",
     "quote_verifications",
 ]
 
@@ -53,6 +56,15 @@ def _parse(entry: dict, team_side: str) -> dict | None:
             "market": "puck",
             "side": team_side,
             "point": float(qualifier),
+            "price": value,
+        }
+    if description == "MONEY_LINE_3_WAY" and qualifier in ("", "Draw"):
+        # The result after regulation. The feed repeats the draw under both
+        # teams, and offers() keeps one copy of an identical price.
+        return {
+            "market": "regulation",
+            "side": "draw" if qualifier else team_side,
+            "point": None,
             "price": value,
         }
     return None
@@ -102,6 +114,11 @@ def market_snapshot(all_offers: pd.DataFrame) -> pd.DataFrame:
             )
             if not valid:
                 group = group[~group.market.eq(market)]
+        # A three-way line is whole or absent: a missing side, or two draw
+        # prices that disagree, leaves nothing to de-vig.
+        regulation = group[group.market.eq("regulation")]
+        if sorted(regulation.side) != ["away", "draw", "home"]:
+            group = group[~group.market.eq("regulation")]
 
         def price(market, side):
             hit = group[group["market"].eq(market) & group["side"].eq(side)]
@@ -125,6 +142,9 @@ def market_snapshot(all_offers: pd.DataFrame) -> pd.DataFrame:
                 "puck_line": point("puck", "home"),
                 "home_puck_price": price("puck", "home"),
                 "away_puck_price": price("puck", "away"),
+                "home_regulation_price": price("regulation", "home"),
+                "draw_price": price("regulation", "draw"),
+                "away_regulation_price": price("regulation", "away"),
                 "quote_verifications": {
                     f"{offer.market}_{offer.side}": offer.quote_verification
                     for offer in group.itertuples(index=False)
