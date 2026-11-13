@@ -167,6 +167,22 @@ def standings(day: date) -> tuple[pd.DataFrame, dict]:
     return pd.DataFrame(rows).sort_values("team_abbr").reset_index(drop=True), receipt
 
 
+def roster(team_abbr: str) -> tuple[dict, dict]:
+    """The club's roster right now: who is with the team, with no word on
+    who dresses or who is hurt."""
+    payload, receipt = _get(f"roster/{team_abbr}/current", f"roster_{team_abbr}")
+    ids = {
+        group: sorted(int(player["id"]) for player in payload[group])
+        for group in ("forwards", "defensemen", "goalies")
+    }
+    if not all(ids.values()):
+        raise ValueError(f"The NHL roster for {team_abbr} is missing a position group")
+    return {
+        "skater_ids": sorted(ids["forwards"] + ids["defensemen"]),
+        "goalie_ids": ids["goalies"],
+    }, receipt
+
+
 def partner_odds(country: str) -> tuple[dict, dict]:
     """The partner sportsbook's current slate: US is DraftKings, CA is FanDuel."""
     payload, receipt = _get(f"partner-game/{country}/now", f"partner_odds_{country}")

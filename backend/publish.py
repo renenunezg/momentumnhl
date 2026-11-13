@@ -43,6 +43,15 @@ TEAM_RATINGS_COLUMNS = [
     "rating",
     "insufficient_window",
 ]
+MORNING_ROSTERS_COLUMNS = [
+    "game_id",
+    "team_abbr",
+    "game_date",
+    "start_date",
+    "fetched_at",
+    "skater_ids",
+    "goalie_ids",
+]
 GAME_PROJECTIONS_COLUMNS = PROJECTION_COLUMNS
 MARKET_SNAPSHOTS_COLUMNS = SNAPSHOT_COLUMNS
 CLOSING_LINES_COLUMNS = CLOSING_LINE_COLUMNS
@@ -238,6 +247,19 @@ def publish_closing_lines(engine, frame: pd.DataFrame) -> int:
     with engine.begin() as conn:
         _insert_ignore(
             _prepare(frame, CLOSING_LINES_COLUMNS), "closing_lines", conn, ["game_id"]
+        )
+    return len(frame)
+
+
+def publish_morning_rosters(engine, frame: pd.DataFrame) -> int:
+    """Each team's first pregame roster of a game stands; a later run of the
+    same day adds only the games it has not logged."""
+    with engine.begin() as conn:
+        _insert_ignore(
+            _prepare(frame, MORNING_ROSTERS_COLUMNS),
+            "morning_rosters",
+            conn,
+            ["game_id", "team_abbr"],
         )
     return len(frame)
 

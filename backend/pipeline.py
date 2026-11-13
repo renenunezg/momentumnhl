@@ -178,6 +178,30 @@ def fetch_offers(
     return pd.concat(frames, ignore_index=True), receipts
 
 
+def morning_rosters(day: date) -> pd.DataFrame:
+    """Both clubs' rosters for each of the day's games that has not started:
+    what a morning run can know about tonight's lineup. Research only."""
+    schedule, _ = nhl_api.schedule(day)
+    now = datetime.now(UTC)
+    rows = []
+    for game in schedule:
+        if game["game_date"] != day or pd.Timestamp(game["start_date"]) <= now:
+            continue
+        for side in ("home", "away"):
+            listed, receipt = nhl_api.roster(game[f"{side}_abbr"])
+            rows.append(
+                {
+                    "game_id": game["game_id"],
+                    "team_abbr": game[f"{side}_abbr"],
+                    "game_date": game["game_date"],
+                    "start_date": game["start_date"],
+                    "fetched_at": receipt["observed_at"],
+                    **listed,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def run_backtest() -> pd.DataFrame:
     games = moneypuck.read_games(range(HISTORY_START_SEASON, max(BACKTEST_SEASONS) + 1))
     frame = with_closing_lines(backtest.run(games, BACKTEST_SEASONS))

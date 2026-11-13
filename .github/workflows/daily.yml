@@ -45,6 +45,14 @@ jobs:
           ${{ inputs.date && format('--date {0}', inputs.date) || '' }}
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # Research only: what a morning run can know about tonight's lineups.
+      # The roster endpoint serves only the present, so a rerun of a past
+      # day skips it.
+      - name: Log morning rosters
+        if: ${{ !inputs.date }}
+        run: poetry run python -m backend log-rosters --publish
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
       - name: Retain source receipts and the day's outputs
         if: always()
         uses: actions/upload-artifact@v4

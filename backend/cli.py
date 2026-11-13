@@ -54,6 +54,10 @@ def main() -> None:
     verify = sub.add_parser("verify-quotes", help="independently check partner prices")
     verify.add_argument("--date")
     sub.add_parser("grade", help="publish finals and settle pending decisions")
+    rosters = sub.add_parser(
+        "log-rosters", help="today's club rosters for games not yet started"
+    )
+    rosters.add_argument("--publish", action="store_true")
     backtest_parser = sub.add_parser("backtest", help="walk-forward backtest")
     backtest_parser.add_argument("--publish", action="store_true")
     validation = sub.add_parser("validate", help="chronological candidate evaluation")
@@ -222,6 +226,19 @@ def main() -> None:
         from backend import pipeline
 
         print(json.dumps(pipeline.grade_pending(_day(None), _engine())))
+    elif args.command == "log-rosters":
+        from backend import pipeline
+
+        frame = pipeline.morning_rosters(_day(None))
+        summary = {
+            "teams": len(frame),
+            "skaters": frame["skater_ids"].str.len().tolist() if len(frame) else [],
+        }
+        if args.publish:
+            from backend import publish
+
+            summary["published"] = publish.publish_morning_rosters(_engine(), frame)
+        print(json.dumps(summary))
     elif args.command == "backtest":
         from backend import backtest, pipeline
 
