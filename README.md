@@ -14,7 +14,7 @@ Supabase is the only interface between the two repositories.
 3. A Poisson grid over both teams' goals gives the win probability, the total, and fair prices.
    Regulation ties are split evenly between the two sides.
 4. When the partner books quote a game two-sided, the published forecast is anchored to the market: the win probability starts from the de-vigged consensus, and the model total blends with the market's total.
-   The goal rates are then solved so the grid reproduces that forecast, so the published probability, total, prices, picks, and in-game anchor are one forecast.
+   The goal rates are then solved so the grid reproduces that forecast, and the published probability, total, prices, picks, and in-game anchor all come from it.
    The pure model's figures and the market inputs are stored beside it.
    Games the books do not yet quote stay pure-model until their game-day run.
 5. A moneyline needs positive expected value at the quoted price; a total also needs a minimum gap between the published total and the line.
@@ -27,7 +27,7 @@ Rules that must hold:
 
 - Decisions freeze at first publication, and the database rejects changes to published picks and started games.
 - No lookahead: ratings, backtests, and evaluations use only data available before each game, and observations after a forecast's cutoff are ignored.
-- Closing lines are a benchmark only; no forecast or decision reads one.
+- Closing lines are only a benchmark, and no forecast or decision reads one.
 - Quotes must be fresh and timestamped, or independently corroborated against the book's public listing, before they can be priced.
 
 ## Live win probability and closing lines
