@@ -34,6 +34,9 @@ def normalize(content: bytes) -> pd.DataFrame:
             "icetime": "toi",
             "xGoals": "xga",
             "goals": "ga",
+            "ongoal": "shots_against",
+            "highDangerShots": "hd_shots",
+            "highDangerGoals": "hd_ga",
         }
     )
     frame["game_date"] = pd.to_datetime(frame.game_date.astype(str)).dt.date
@@ -52,6 +55,9 @@ def normalize(content: bytes) -> pd.DataFrame:
             "toi",
             "xga",
             "ga",
+            "shots_against",
+            "hd_shots",
+            "hd_ga",
         ]
     ].sort_values("game_date")
 

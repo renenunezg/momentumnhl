@@ -35,10 +35,29 @@ ZONE_STARTS = {
     "I_F_neutralZoneShiftStarts": "nz_starts",
     "I_F_flyShiftStarts": "fly_starts",
 }
+# Box-score counts for the season stat lines (backend/players/season_stats.py),
+# over all situations; no rating reads them.
+BOX = {
+    "I_F_primaryAssists": "primary_assists",
+    "I_F_secondaryAssists": "secondary_assists",
+    "I_F_shotsOnGoal": "shots",
+    "I_F_penalityMinutes": "pim",
+    "I_F_hits": "hits",
+    "shotsBlockedByPlayer": "blocks",
+    "faceoffsWon": "faceoffs_won",
+    "faceoffsLost": "faceoffs_lost",
+}
+# On-ice shot attempts and expected goals for and against at 5v5.
+ON_ICE_5V5 = {
+    "OnIce_F_shotAttempts": "cf_5v5",
+    "OnIce_A_shotAttempts": "ca_5v5",
+    "OnIce_F_xGoals": "xgf_5v5",
+    "OnIce_A_xGoals": "xga_5v5",
+}
 SKATER_COLUMNS = [
     "player_id", "name", "season", "game_id", "game_date", "team", "position",
     "toi", "toi_5v5", "toi_pp", "toi_pk", "game_score", "ixg", "goals", "points",
-    *ZONE_STARTS.values(),
+    *ZONE_STARTS.values(), *BOX.values(), *ON_ICE_5V5.values(),
 ]  # fmt: skip
 SHOT_COLUMNS = ["season", "game_id", "time", "home", "xg", "goal", "home_team"]
 SHIFT_COLUMNS = ["game_id", "player_id", "team", "period", "start", "end"]
@@ -74,7 +93,7 @@ def _skater_logs(season: int) -> pd.DataFrame:
     wanted = [
         "playerId", "name", "season", "gameId", "playerTeam", "gameDate", "position",
         "situation", "icetime", "gameScore", "I_F_xGoals", "I_F_goals", "I_F_points",
-        *ZONE_STARTS,
+        *ZONE_STARTS, *BOX, *ON_ICE_5V5,
     ]  # fmt: skip
     with zipfile.ZipFile(io.BytesIO(content)) as archive:
         frames = [
@@ -97,9 +116,10 @@ def _skater_logs(season: int) -> pd.DataFrame:
             "I_F_xGoals": "ixg",
             "I_F_goals": "goals",
             "I_F_points": "points",
+            **BOX,
         }
     )
-    out = whole.drop(columns=["situation", *ZONE_STARTS])
+    out = whole.drop(columns=["situation", *ZONE_STARTS, *ON_ICE_5V5])
     for situation, suffix in SITUATIONS.items():
         if not suffix:
             continue
@@ -108,13 +128,21 @@ def _skater_logs(season: int) -> pd.DataFrame:
         out = out.merge(
             part, on=["player_id", "game_id"], how="left", validate="one_to_one"
         )
-    even = raw.loc[raw.situation.eq("5on5"), [*key, *ZONE_STARTS]].rename(
-        columns={"playerId": "player_id", "gameId": "game_id", **ZONE_STARTS}
+    even = raw.loc[raw.situation.eq("5on5"), [*key, *ZONE_STARTS, *ON_ICE_5V5]]
+    even = even.rename(
+        columns={
+            "playerId": "player_id",
+            "gameId": "game_id",
+            **ZONE_STARTS,
+            **ON_ICE_5V5,
+        }
     )
     out = out.merge(
         even, on=["player_id", "game_id"], how="left", validate="one_to_one"
     )
-    filled = ["toi_5v5", "toi_pp", "toi_pk", *ZONE_STARTS.values()]
+    filled = [
+        "toi_5v5", "toi_pp", "toi_pk", *ZONE_STARTS.values(), *ON_ICE_5V5.values()
+    ]  # fmt: skip
     out[filled] = out[filled].fillna(0.0)
     out["team"] = out.team.replace(TEAM_CODES)
     out["game_date"] = pd.to_datetime(out.game_date.astype(str)).dt.date

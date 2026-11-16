@@ -3,6 +3,8 @@ RLS, policies, and triggers survive; every statement is schema-qualified so a
 lost search_path can never redirect a write. Timestamps become tz-aware
 datetimes and every NaN becomes None: PostgREST cannot serialize NaN."""
 
+import json
+
 import pandas as pd
 from sqlalchemy import MetaData, Table, text
 from sqlalchemy.dialects.postgresql import insert
@@ -13,6 +15,7 @@ from backend.model.projections import PROJECTION_COLUMNS
 from backend.odds.closing import CLOSING_LINE_COLUMNS
 from backend.odds.partner import SNAPSHOT_COLUMNS
 from backend.players.pipeline import POSITION_TRAIT_COLUMNS
+from backend.players.season_stats import STAT_LINE_COLUMNS
 from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS
 
 SCHEMA = "nhl"
@@ -265,18 +268,36 @@ def publish_morning_rosters(engine, frame: pd.DataFrame) -> int:
     return len(frame)
 
 
-def publish_position_traits(engine, frame: pd.DataFrame) -> int:
-    """The table keeps one snapshot per season, so a run replaces its season."""
+def publish_position_traits(engine, frame: pd.DataFrame, lines: pd.DataFrame) -> dict:
+    """The tables keep one snapshot per season, so a run replaces its season's
+    grades and their stat lines together."""
     if frame.empty:
         raise ValueError("No player grades to publish")
+    graded = set(frame.loc[frame.trait.eq("grade"), "athlete_id"])
+    if set(lines.athlete_id) != graded or len(lines) != len(graded):
+        raise ValueError("Season stat lines do not match the graded players")
     seasons = sorted(int(season) for season in frame.season.unique())
+    stat_lines = [
+        {**row, "stats": [int(v) for v in row["stats"]]}
+        for row in lines[STAT_LINE_COLUMNS].to_dict("records")
+    ]
     with engine.begin() as conn:
-        conn.execute(
-            text(f"DELETE FROM {SCHEMA}.position_traits WHERE season = ANY(:seasons)"),
-            {"seasons": seasons},
-        )
+        for table in ("position_traits", "player_season_stats"):
+            conn.execute(
+                text(f"DELETE FROM {SCHEMA}.{table} WHERE season = ANY(:seasons)"),
+                {"seasons": seasons},
+            )
         _append(_prepare(frame, POSITION_TRAIT_COLUMNS), "position_traits", conn)
-    return len(frame)
+        names = ", ".join(STAT_LINE_COLUMNS)
+        conn.execute(
+            text(
+                f"INSERT INTO {SCHEMA}.player_season_stats ({names}) SELECT {names} "
+                f"FROM jsonb_populate_recordset(NULL::{SCHEMA}.player_season_stats, "
+                "CAST(:rows AS jsonb))"
+            ),
+            {"rows": json.dumps(stat_lines)},
+        )
+    return {"position_traits": len(frame), "player_season_stats": len(stat_lines)}
 
 
 def publish_backtest(engine, frame: pd.DataFrame) -> int:

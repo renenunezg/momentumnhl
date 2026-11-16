@@ -237,18 +237,25 @@ def main() -> None:
         print(json.dumps(pipeline.grade_pending(_day(None), _engine())))
     elif args.command == "player-grades":
         from backend.players import pipeline as players
+        from backend.players import season_stats
 
-        frame = players.run(_day(args.date))
+        day = _day(args.date)
+        frame = players.run(day)
         graded = frame[frame.trait.eq("grade")]
+        week = int(frame.week.iloc[0])
+        lines = season_stats.lines(day, int(frame.season.iloc[0]), week, graded)
         summary = {
             "rows": len(frame),
-            "week": int(frame.week.iloc[0]),
+            "week": week,
             "graded": graded.position_group.value_counts().to_dict(),
+            "stat_lines": len(lines),
         }
         if args.publish:
             from backend import publish
 
-            summary["published"] = publish.publish_position_traits(_engine(), frame)
+            summary["published"] = publish.publish_position_traits(
+                _engine(), frame, lines
+            )
         print(json.dumps(summary))
     elif args.command == "player-grades-fit":
         from backend.players import fit
