@@ -13,6 +13,10 @@ on:
         description: Site day to run (YYYY-MM-DD, Pacific); default today
         required: false
         type: string
+      players:
+        description: Also refresh the player grades, whatever the weekday
+        type: boolean
+        default: false
 
 concurrency:
   group: nhl-production
@@ -66,3 +70,51 @@ jobs:
             backend/data/raw/quote_verification
           retention-days: 90
           if-no-files-found: ignore
+
+
+  # Skater and goalie grades for the site's players page, on Mondays and
+  # Thursdays. They read no forecast and feed none, so the job runs after the
+  # morning run whatever its outcome. Shift charts and MoneyPuck player files
+  # are kept in a rolling cache; only new games are fetched. A cold cache
+  # refetches three seasons of shift charts, most of an hour.
+  players:
+    needs: run
+    if: ${{ always() && !inputs.date }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Decide whether the grades are due
+        id: due
+        run: |
+          weekday=$(date -u +%u)
+          if [ "$weekday" = 1 ] || [ "$weekday" = 4 ] || [ "${{ inputs.players }}" = "true" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v4
+        if: steps.due.outputs.run == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.due.outputs.run == 'true'
+        with:
+          python-version: "3.12"
+      - name: Install poetry
+        if: steps.due.outputs.run == 'true'
+        run: pipx install poetry
+      - name: Install dependencies
+        if: steps.due.outputs.run == 'true'
+        run: poetry sync --no-interaction
+      - name: Restore player source cache
+        if: steps.due.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            backend/data/raw/shifts
+            backend/data/raw/skater_logs
+            backend/data/raw/shot_logs
+            backend/data/raw/goalies
+          key: nhl-player-sources-${{ github.run_id }}
+          restore-keys: nhl-player-sources-
+      - name: Player grades
+        if: steps.due.outputs.run == 'true'
+        run: poetry run python -m backend player-grades --publish
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}

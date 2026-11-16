@@ -56,6 +56,17 @@ def normalize(content: bytes) -> pd.DataFrame:
     ].sort_values("game_date")
 
 
+def _download(season: int) -> pd.DataFrame:
+    response = requests.get(
+        f"{URL}/{season}.zip", timeout=90, headers={"User-Agent": USER_AGENT}
+    )
+    response.raise_for_status()
+    frame = normalize(response.content)
+    store.write_parquet(frame, store.raw_path("goalies", f"{season}.parquet"))
+    store.receipt(f"goalies_{season}", response.content, datetime.now(UTC))
+    return frame
+
+
 def load(seasons, *, download: bool = False) -> pd.DataFrame:
     frames = []
     for season in seasons:
@@ -63,12 +74,14 @@ def load(seasons, *, download: bool = False) -> pd.DataFrame:
         if not path.exists():
             if not download:
                 raise FileNotFoundError(f"Missing goalie cache for {season}")
-            response = requests.get(
-                f"{URL}/{season}.zip", timeout=90, headers={"User-Agent": USER_AGENT}
-            )
-            response.raise_for_status()
-            frame = normalize(response.content)
-            store.write_parquet(frame, path)
-            store.receipt(f"goalies_{season}", response.content, datetime.now(UTC))
+            _download(season)
         frames.append(pd.read_parquet(path))
     return pd.concat(frames, ignore_index=True)
+
+
+def refresh(seasons) -> pd.DataFrame:
+    """Like load, but downloads missing seasons and always re-reads the last
+    one, the season in progress."""
+    seasons = list(seasons)
+    _download(seasons[-1])
+    return load(seasons, download=True)

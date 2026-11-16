@@ -12,6 +12,7 @@ from backend.grading import RESULT_COLUMNS, SCHEDULE_COLUMNS
 from backend.model.projections import PROJECTION_COLUMNS
 from backend.odds.closing import CLOSING_LINE_COLUMNS
 from backend.odds.partner import SNAPSHOT_COLUMNS
+from backend.players.pipeline import POSITION_TRAIT_COLUMNS
 from backend.recommendations import RECOMMENDATION_COLUMNS, SETTLEMENT_COLUMNS
 
 SCHEMA = "nhl"
@@ -261,6 +262,20 @@ def publish_morning_rosters(engine, frame: pd.DataFrame) -> int:
             conn,
             ["game_id", "team_abbr"],
         )
+    return len(frame)
+
+
+def publish_position_traits(engine, frame: pd.DataFrame) -> int:
+    """The table keeps one snapshot per season, so a run replaces its season."""
+    if frame.empty:
+        raise ValueError("No player grades to publish")
+    seasons = sorted(int(season) for season in frame.season.unique())
+    with engine.begin() as conn:
+        conn.execute(
+            text(f"DELETE FROM {SCHEMA}.position_traits WHERE season = ANY(:seasons)"),
+            {"seasons": seasons},
+        )
+        _append(_prepare(frame, POSITION_TRAIT_COLUMNS), "position_traits", conn)
     return len(frame)
 
 

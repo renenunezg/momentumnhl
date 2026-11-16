@@ -58,6 +58,15 @@ def main() -> None:
         "log-rosters", help="today's club rosters for games not yet started"
     )
     rosters.add_argument("--publish", action="store_true")
+    grades = sub.add_parser(
+        "player-grades", help="skater and goalie grades for the players page"
+    )
+    grades.add_argument("--date")
+    grades.add_argument("--publish", action="store_true")
+    grades_fit = sub.add_parser(
+        "player-grades-fit", help="refit the frozen player model on these seasons"
+    )
+    grades_fit.add_argument("--seasons", nargs="+", type=int, required=True)
     backtest_parser = sub.add_parser("backtest", help="walk-forward backtest")
     backtest_parser.add_argument("--publish", action="store_true")
     validation = sub.add_parser("validate", help="chronological candidate evaluation")
@@ -226,6 +235,27 @@ def main() -> None:
         from backend import pipeline
 
         print(json.dumps(pipeline.grade_pending(_day(None), _engine())))
+    elif args.command == "player-grades":
+        from backend.players import pipeline as players
+
+        frame = players.run(_day(args.date))
+        graded = frame[frame.trait.eq("grade")]
+        summary = {
+            "rows": len(frame),
+            "week": int(frame.week.iloc[0]),
+            "graded": graded.position_group.value_counts().to_dict(),
+        }
+        if args.publish:
+            from backend import publish
+
+            summary["published"] = publish.publish_position_traits(_engine(), frame)
+        print(json.dumps(summary))
+    elif args.command == "player-grades-fit":
+        from backend.players import fit
+
+        model = fit.fit(args.seasons)
+        fit.write(model)
+        print(json.dumps({"fit_seasons": model["fit_seasons"]}))
     elif args.command == "log-rosters":
         from backend import pipeline
 

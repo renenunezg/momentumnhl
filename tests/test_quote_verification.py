@@ -306,6 +306,7 @@ def test_database_enforces_publication_evidence(quote_case):
             "market_snapshots": publish.MARKET_SNAPSHOTS_COLUMNS,
             "closing_lines": publish.CLOSING_LINES_COLUMNS,
             "morning_rosters": publish.MORNING_ROSTERS_COLUMNS,
+            "position_traits": publish.POSITION_TRAIT_COLUMNS,
             "game_results": publish.GAME_RESULTS_COLUMNS,
             "backtest_predictions": BACKTEST_COLUMNS,
             "recommendation_schedule": publish.RECOMMENDATION_SCHEDULE_COLUMNS,

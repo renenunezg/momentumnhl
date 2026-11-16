@@ -37,10 +37,26 @@ It also holds the freshest two-sided partner quote from the minutes before puck 
 A game with no qualifying quote has no close.
 `nhl.forecast_accuracy` compares the model with the closing line on the same games, for the backtest and the live season.
 
+## Player grades
+
+A separate job grades skaters and goalies for the site's players page and writes them to `nhl.position_traits`.
+No forecast or pick reads them.
+
+1. Shift charts and shot times cut each game into stretches with a fixed set of skaters on the ice.
+   A penalized regression over those stretches gives each skater an offense and a defense effect on expected goals with his linemates and opponents held constant, at even strength and on special teams.
+2. A frozen model combines those effects with his individual shot rates, ice time, and zone starts, and adds what his own finishing contributes beyond expected goals.
+   The result is goals above an average skater at his position per 82 games, split into offense and defense.
+3. A goalie's rating is his goals saved above expected, weighted toward recent games and shrunk toward average.
+4. Each qualified player gets a grade on the 20 to 80 scale: 50 is average at the position and 10 points is one standard deviation.
+
+Forwards, defensemen, and goalies are each graded against their own position.
+Goalie grades are the least certain, because a goalie's results repeat the least.
+
 ## Data sources
 
 - [MoneyPuck](https://moneypuck.com/data.htm) team game-by-game data, including xG, cached by season.
 - NHL API (`api-web.nhle.com`): schedule, scores, standings, rosters, logos, and the partner sportsbook odds (DraftKings in the US, FanDuel in Canada).
+- For player grades: MoneyPuck skater and goalie game logs and shot files, and the NHL's shift charts, with its time-on-ice reports for games the shift-chart API lacks.
 - DraftKings' public betting listing, fetched only to corroborate a quote whose provider timestamp is stale.
 - A one-time cached pull of historical closing lines from ESPN, used only as the backtest benchmark.
 
@@ -53,6 +69,7 @@ backend/cli.py        python -m backend <command>
 backend/etl/          MoneyPuck, NHL API, play-by-play, and live-feed ingestion
 backend/model/        ratings, Poisson grid, market anchoring, pricing, in-game model
 backend/odds/         partner quotes, quote verification, closing lines
+backend/players/      skater and goalie grades: sources, on-ice model, rating, fit, pipeline
 backend/data_static/  team list and frozen model parameters
 backend/data/         local caches (gitignored)
 sql/                  ordered migrations for the nhl schema
