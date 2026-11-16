@@ -3,8 +3,11 @@
 Reads the frozen model, refreshes the season in progress, rebuilds the on-ice
 fit for the trailing windows, and returns rows in the shape the site's player
 pages read (nhl.position_traits): one row per player and trait, with a
-`grade` row on the 20 to 80 scale (50 average, 10 points a standard deviation
-among qualified players at the position, stopped at 20 and 80).
+`grade` row on the 20 to 80 scale. The grade places a player by rank among
+qualified players at his position on a normal curve (50 the median, 10 points
+a standard deviation, stopped at 20 and 80), as the college football grades do.
+Skater value is skewed toward a few stars, so grading the value itself put
+seven forwards at 80.
 """
 
 import math
@@ -12,6 +15,7 @@ from datetime import UTC, date, datetime
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 from backend.etl import goalies as goalie_logs
 from backend.model.ratings import season_of
@@ -45,9 +49,11 @@ def _percentile(values: pd.Series, group: pd.Series) -> pd.Series:
 
 
 def _grade(values: pd.Series, group: pd.Series) -> pd.Series:
-    mean = values.groupby(group).transform("mean")
-    sd = values.groupby(group).transform("std")
-    return (GRADE_MEAN + GRADE_SD * (values - mean) / sd).clip(GRADE_MIN, GRADE_MAX)
+    """Blom normal scores of the ranks within `group`, on the grade scale."""
+    rank = values.groupby(group).rank(method="average")
+    size = values.groupby(group).transform("size")
+    standard = pd.Series(norm.ppf((rank - 0.375) / (size + 0.25)), index=values.index)
+    return (GRADE_MEAN + GRADE_SD * standard).clip(GRADE_MIN, GRADE_MAX)
 
 
 def skater_ratings(day: date, model: dict) -> pd.DataFrame:

@@ -48,7 +48,7 @@ No forecast or pick reads them.
    The result is goals above an average skater at his position per 82 games, split into offense and defense.
 3. A goalie's rating is his goals saved above expected, weighted toward recent games and shrunk toward average, with an age curve.
    His grade carries an uncertainty that reflects how much of his own record the rating keeps.
-4. Each qualified player gets a grade on the 20 to 80 scale: 50 is average at the position and 10 points is one standard deviation.
+4. Each qualified player gets a grade on the 20 to 80 scale by his rank at the position, placed on a normal curve: 50 is the median and 10 points is one standard deviation.
 
 Forwards, defensemen, and goalies are each graded against their own position.
 Goalie grades are the least certain, because a goalie's results repeat the least.
