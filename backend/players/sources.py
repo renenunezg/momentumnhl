@@ -24,6 +24,7 @@ from backend.etl.nhl_api import BASE_URL, USER_AGENT
 MONEYPUCK = "https://peter-tanner.com/moneypuck/downloads"
 SHIFT_CHARTS = "https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={}"
 TOI_REPORT = "https://www.nhl.com/scores/htmlreports/{}{}/T{}{}.HTM"
+SKATER_SUMMARY = "https://api.nhle.com/stats/rest/en/skater/summary"
 BIOS = "https://moneypuck.com/moneypuck/playerData/playerBios/allPlayersLookup.csv"
 REQUEST_PAUSE_SECONDS = 0.25
 SHIFT_TYPE = 517
@@ -177,6 +178,25 @@ def _shots(season: int) -> pd.DataFrame:
         }
     )
     return out.sort_values(["game_id", "time"]).reset_index(drop=True)
+
+
+def plus_minus(season: int, day) -> pd.Series:
+    """Each skater's official plus/minus over the season's regular-season games
+    before `day`, by player id, from one NHL stats API request."""
+    expression = f'gameTypeId=2 and seasonId={season}{season + 1} and gameDate<"{day}"'
+    response = _session.get(
+        SKATER_SUMMARY,
+        params={
+            "isAggregate": "true",
+            "isGame": "true",
+            "limit": -1,
+            "cayenneExp": expression,
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    rows = response.json()["data"]
+    return pd.Series({str(r["playerId"]): r["plusMinus"] for r in rows}, dtype=float)
 
 
 def skater_logs(season: int, refresh: bool = False) -> pd.DataFrame:

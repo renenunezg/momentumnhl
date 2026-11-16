@@ -6,7 +6,8 @@ day, in the key order and scale of SKATER_LINE or GOALIE_LINE; a key ending
 (src/lib/hockey-season-stats.ts), so the order is a contract with it.
 
 Every number is raw MoneyPuck game-log data summed over the season, all
-situations unless the name says 5v5, and nothing here is adjusted or read by a
+situations unless the name says 5v5, except plus/minus, which is the NHL's
+official figure from its stats API. Nothing here is adjusted or read by a
 rating. Ice time is in minutes. A traded player's line covers every club.
 """
 
@@ -29,7 +30,11 @@ SKATER_LINE = _line(
     "games", "goals", "assists", "points", "shots", "pim", "hits", "blocks",
     "toi*10", "toi_pp*10", "toi_pk*10", "ixg*10", "faceoffs_won", "faceoffs_lost",
     "cf_5v5", "ca_5v5", "xgf_5v5*10", "xga_5v5*10", "oz_starts", "dz_starts",
+    "plus_minus",
 )  # fmt: skip
+# Plus/minus needs to know which goals came on a power play or an empty net,
+# which the MoneyPuck logs do not separate, so it comes from the NHL instead.
+LOGGED_SKATER_KEYS = [key for key, _ in SKATER_LINE if key != "plus_minus"]
 GOALIE_LINE = _line(
     "games", "toi*10", "shots_against", "ga", "xga*10", "hd_shots", "hd_ga"
 )  # fmt: skip
@@ -50,8 +55,7 @@ def _skater_totals(logs: pd.DataFrame) -> pd.DataFrame:
         toi_pp=logs.toi_pp / 60,
         toi_pk=logs.toi_pk / 60,
     )
-    totals = logs.groupby(logs.player_id.astype(str))[[k for k, _ in SKATER_LINE]]
-    return totals.sum()
+    return logs.groupby(logs.player_id.astype(str))[LOGGED_SKATER_KEYS].sum()
 
 
 def _goalie_totals(logs: pd.DataFrame) -> pd.DataFrame:
@@ -62,17 +66,24 @@ def _goalie_totals(logs: pd.DataFrame) -> pd.DataFrame:
 def lines(day, season: int, week: int, graded: pd.DataFrame) -> pd.DataFrame:
     """A stat line for each player in `graded` (its grade rows), from the
     season's cached logs before `day`, which the grade run has just refreshed."""
-    skaters = sources.skater_logs(season)
-    keepers = goalie_logs.load([season])
-    totals = pd.concat(
-        [
-            _encode(_skater_totals(skaters[skaters.game_date < day]), SKATER_LINE),
-            _encode(_goalie_totals(keepers[keepers.game_date < day]), GOALIE_LINE),
-        ]
-    )
     players = graded[["athlete_id", "position_group"]].drop_duplicates()
     if players.athlete_id.duplicated().any():
         raise ValueError("A graded player is listed at two positions")
+    skaters = sources.skater_logs(season)
+    keepers = goalie_logs.load([season])
+    skater_totals = _skater_totals(skaters[skaters.game_date < day])
+    skater_totals = skater_totals[skater_totals.index.isin(players.athlete_id)]
+    plus_minus = sources.plus_minus(season, day)
+    absent = skater_totals.index.difference(plus_minus.index)
+    if len(absent):
+        raise ValueError(f"The NHL stats API has no plus/minus for {list(absent)}")
+    skater_totals["plus_minus"] = plus_minus[skater_totals.index]
+    totals = pd.concat(
+        [
+            _encode(skater_totals, SKATER_LINE),
+            _encode(_goalie_totals(keepers[keepers.game_date < day]), GOALIE_LINE),
+        ]
+    )
     out = players.assign(season=season, week=week, stats=players.athlete_id.map(totals))
     missing = out.stats.isna()
     if missing.any():
