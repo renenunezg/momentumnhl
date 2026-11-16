@@ -7,10 +7,12 @@
   2025
  ],
  "goalie": {
-  "half_life_games": 80.0,
-  "intercept": 0.03553105566840301,
+  "half_life_games": 40.0,
+  "intercept": 0.03290457431417985,
+  "per_year_over_30": -0.016145228471079347,
+  "per_year_under_25": -0.01712808072401436,
   "prior_hours": 320.0,
-  "slope": 2.5136999517924177
+  "slope": 3.040868462018486
  },
  "penalty_hours": {
   "5v5": 16.0,
@@ -38,7 +40,7 @@
    "F": 1.311818492721503
   }
  },
- "version": "nhl-players-v1",
+ "version": "nhl-players-v2",
  "weights": {
   "5v5": {
    "def": {

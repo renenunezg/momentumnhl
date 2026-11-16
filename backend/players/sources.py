@@ -24,6 +24,7 @@ from backend.etl.nhl_api import BASE_URL, USER_AGENT
 MONEYPUCK = "https://peter-tanner.com/moneypuck/downloads"
 SHIFT_CHARTS = "https://api.nhle.com/stats/rest/en/shiftcharts?cayenneExp=gameId={}"
 TOI_REPORT = "https://www.nhl.com/scores/htmlreports/{}{}/T{}{}.HTM"
+BIOS = "https://moneypuck.com/moneypuck/playerData/playerBios/allPlayersLookup.csv"
 REQUEST_PAUSE_SECONDS = 0.25
 SHIFT_TYPE = 517
 REPORT_PERIODS = {"1": 1, "2": 2, "3": 3, "OT": 4}
@@ -246,8 +247,9 @@ def shifts(season: int, game_ids) -> pd.DataFrame:
 
 
 def identities(teams) -> pd.DataFrame:
-    """Names and headshots from each club's current roster. MoneyPuck's names
-    lose their accented letters, so the site reads these where they exist."""
+    """Names, headshots and birth dates from each club's current roster.
+    MoneyPuck's names lose their accented letters, so the site reads these
+    where they exist."""
     rows = []
     for team in teams:
         payload = _get(f"{BASE_URL}/roster/{team}/current", timeout=60).json()
@@ -260,7 +262,20 @@ def identities(teams) -> pd.DataFrame:
                         "player_id": int(player["id"]),
                         "roster_name": f"{first} {last}",
                         "headshot_url": player.get("headshot"),
+                        "birth_date": player.get("birthDate"),
                     }
                 )
         time.sleep(REQUEST_PAUSE_SECONDS)
     return pd.DataFrame(rows).drop_duplicates("player_id")
+
+
+def birth_dates() -> pd.Series:
+    """Birth date by player id (as text) from MoneyPuck's player list, for
+    fitting the goalie age curve on seasons whose rosters are long gone."""
+    path = store.raw_path("player_bios.parquet")
+    if not path.exists():
+        bios = pd.read_csv(io.BytesIO(_get(BIOS).content))
+        store.write_parquet(bios[["playerId", "birthDate"]], path)
+    bios = pd.read_parquet(path, columns=["playerId", "birthDate"])
+    born = pd.to_datetime(bios.birthDate, errors="coerce")
+    return pd.Series(born.to_numpy(), index=bios.playerId.astype(str)).dropna()

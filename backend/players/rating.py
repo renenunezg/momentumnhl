@@ -18,6 +18,7 @@ from backend.config import STATIC_DIR
 from backend.players.onice import WINDOWS
 
 MODEL_PATH = STATIC_DIR / "player_model.json"
+MODEL_VERSION = "nhl-players-v2"
 # History lengths in games, and the league-average sample each rate is shrunk by.
 SHORT, MEDIUM, LONG, CAREER = 20, 40, 160, 246
 RATE_PRIOR_HOURS = 5.0
@@ -50,7 +51,10 @@ GAMES_PER_SEASON = 82
 
 
 def load_model() -> dict:
-    return json.loads(MODEL_PATH.read_text())
+    model = json.loads(MODEL_PATH.read_text())
+    if model["version"] != MODEL_VERSION:
+        raise ValueError(f"The frozen player model is not {MODEL_VERSION}")
+    return model
 
 
 def _past(table: pd.DataFrame, window: int) -> pd.DataFrame:

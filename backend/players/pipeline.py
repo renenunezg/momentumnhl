@@ -17,8 +17,8 @@ from backend.etl import goalies as goalie_logs
 from backend.model.ratings import season_of
 from backend.model.signals import FRANCHISE_ALIASES
 from backend.players import goalies, onice, rating, sources
+from backend.players.rating import MODEL_VERSION
 
-MODEL_VERSION = "nhl-players-v1"
 # Seasons of history a rating reads: on-ice fits use the trailing 730 days,
 # individual rates a skater's last 246 games.
 ON_ICE_SEASONS, LOG_SEASONS = 3, 4
@@ -92,11 +92,11 @@ def skater_ratings(day: date, model: dict) -> pd.DataFrame:
     return now
 
 
-def goalie_ratings(day: date, model: dict) -> pd.DataFrame:
+def goalie_ratings(day: date, model: dict, born: pd.Series) -> pd.DataFrame:
     season = season_of(day)
     logs = goalie_logs.refresh(range(season - LOG_SEASONS + 1, season + 1))
     logs = logs[logs.game_date < day]
-    rated = goalies.rate(logs, model["goalie"], day)
+    rated = goalies.rate(logs, model["goalie"], born, day)
     rated["team"] = rated.team_abbr.replace(FRANCHISE_ALIASES)
     rated["qualified"] = rated.games >= GOALIE_GAMES
     return rated
@@ -134,7 +134,11 @@ def run(day: date) -> pd.DataFrame:
     """nhl.position_traits rows for the season `day` falls in."""
     model = rating.load_model()
     season = season_of(day)
-    skaters, keepers = skater_ratings(day, model), goalie_ratings(day, model)
+    skaters = skater_ratings(day, model)
+    known = sources.identities(sorted(set(skaters.team)))
+    known["athlete_id"] = known.player_id.astype(str)
+    born = known.set_index("athlete_id").birth_date
+    keepers = goalie_ratings(day, model, born)
     rows = pd.concat(
         [
             _rows(
@@ -144,9 +148,12 @@ def run(day: date) -> pd.DataFrame:
         ],
         ignore_index=True,
     )
-    known = sources.identities(sorted(set(skaters.team) | set(keepers.team)))
-    known["athlete_id"] = known.player_id.astype(str)
-    rows = rows.merge(known, on="athlete_id", how="left", validate="many_to_one")
+    rows = rows.merge(
+        known.drop(columns=["player_id", "birth_date"]),
+        on="athlete_id",
+        how="left",
+        validate="many_to_one",
+    )
     opening = sources.skater_logs(season).game_date.min()
     rows["athlete_name"] = rows.roster_name.fillna(rows.moneypuck_name)
     rows["season"] = season
@@ -155,6 +162,11 @@ def run(day: date) -> pd.DataFrame:
     rows["model_version"] = MODEL_VERSION
     rows["kind"] = None
     rows["in_grade"] = True
-    for column in ("uncertainty", "reliability", "points_above_replacement"):
-        rows[column] = np.nan
+    # Only a goalie's grade carries an uncertainty so far: how much of his own
+    # record the rating keeps, on the scale the football grades use.
+    kept = keepers.set_index(keepers.goalie_id.astype(str)).reliability
+    graded_goalie = rows.position_group.eq("G") & rows.trait.eq("grade")
+    rows["reliability"] = rows.athlete_id.map(kept).where(graded_goalie)
+    rows["uncertainty"] = GRADE_SD * np.sqrt(1.0 - rows.reliability)
+    rows["points_above_replacement"] = np.nan
     return rows[POSITION_TRAIT_COLUMNS]

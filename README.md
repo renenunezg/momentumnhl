@@ -46,7 +46,8 @@ No forecast or pick reads them.
    A penalized regression over those stretches gives each skater an offense and a defense effect on expected goals with his linemates and opponents held constant, at even strength and on special teams.
 2. A frozen model combines those effects with his individual shot rates, ice time, and zone starts, and adds what his own finishing contributes beyond expected goals.
    The result is goals above an average skater at his position per 82 games, split into offense and defense.
-3. A goalie's rating is his goals saved above expected, weighted toward recent games and shrunk toward average.
+3. A goalie's rating is his goals saved above expected, weighted toward recent games and shrunk toward average, with an age curve.
+   His grade carries an uncertainty that reflects how much of his own record the rating keeps.
 4. Each qualified player gets a grade on the 20 to 80 scale: 50 is average at the position and 10 points is one standard deviation.
 
 Forwards, defensemen, and goalies are each graded against their own position.

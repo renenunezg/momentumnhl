@@ -17,10 +17,13 @@ import pandas as pd
 from backend.config import HISTORY_START_SEASON
 from backend.etl import goalies as goalie_logs
 from backend.players import goalies, onice, rating, sources
+from backend.players.rating import MODEL_VERSION
 
 STEP_DAYS = 14
 PENALTIES = {"5v5": (1.0, 2.0, 4.0, 8.0, 16.0, 32.0), "pp": (4.0, 8.0, 16.0, 32.0)}
 FINISHING_PRIORS = (10.0, 20.0, 40.0, 80.0, 160.0)
+# Goalie logs go back further than shift charts, and a goalie fit needs the years.
+GOALIE_FIRST_SEASON = 2008
 FUTURE_GAMES, MIN_FUTURE_GAMES = 40, 20
 KEY = 10_000_000
 
@@ -186,17 +189,20 @@ def fit(seasons) -> dict:
         )
         shooting[kind] = {pos: by_role["off"][pos]["shoot"] for pos in ("F", "D")}
     return {
-        "version": "nhl-players-v1",
+        "version": MODEL_VERSION,
         "fit_seasons": seasons,
         "penalty_hours": penalty,
         "position_means": means,
         **model,
         "weights": weights,
         "shooting": shooting,
-        "goalie": goalies.fit(
-            goalie_logs.load(range(HISTORY_START_SEASON, seasons[-1] + 1)), seasons[-1]
-        ),
+        "goalie": goalie_model(seasons[-1]),
     }
+
+
+def goalie_model(last_season: int) -> dict:
+    logs = goalie_logs.load(range(GOALIE_FIRST_SEASON, last_season + 1), download=True)
+    return goalies.fit(logs, sources.birth_dates(), last_season)
 
 
 def write(model: dict) -> None:
