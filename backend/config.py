@@ -10,8 +10,8 @@ RAW_DIR = DATA_DIR / "raw"
 PROCESSED_DIR = DATA_DIR / "processed"
 STATIC_DIR = REPO_ROOT / "backend" / "data_static"
 
-MODEL_VERSION = "nhl-poisson-v2.1"
-POLICY_VERSION = "nhl-picks-v3"
+MODEL_VERSION = "nhl-poisson-v2.2"
+POLICY_VERSION = "nhl-picks-v3.1"
 
 # Seasons are start years: 2026 is 2026-27. MoneyPuck rows exist from 2008; the
 # model needs a rolling window, league means from completed seasons, and the
@@ -48,12 +48,21 @@ MIN_PRICE_MULTIPLIER = 1.1
 # NFL models do, and picks price that same forecast. Against 2023 to 2025
 # ESPN open lines the pure model adds nothing to the de-vigged moneyline (its
 # fitted logit weight is 0.02 +/- 0.07), so the win probability is the
-# consensus itself, moved only when one team played the day before. The open
-# under-prices that: on 3,890 games a back-to-back costs 0.19 +/- 0.075 logit
-# beyond the open (0.13 beyond the close). Walk-forward on 2024 and 2025 at
-# the open, picking every side with positive expected value went 325-230,
-# +5.3 +/- 4.0 percent, hitting 58.6 percent against 58.4 expected.
-BACK_TO_BACK_LOGIT = -0.19
+# consensus itself, moved only when one team played the day before.
+#
+# Since v2.2 the shift is the one fitted against the closing line. The open
+# under-prices a back-to-back by 0.19 +/- 0.075 logit (3,890 games), but the
+# market moves 0.065 +/- 0.004 toward the rested team by the close, and the
+# morning partner quote a pick is priced from is already that late: on 113
+# live games it moved 1.0 point on average to the close, against 2.2 for the
+# ESPN open. Fitted over the ESPN close on 2022-23 to 2025-26 the shift is
+# -0.146 +/- 0.063 (by season -0.21, -0.10, -0.24, -0.06), so it is in-sample
+# for all four seasons. Replayed at the close, picking every side with
+# positive expected value, -0.19 claimed +4.3 percent and returned +2.3 +/-
+# 2.9; -0.15 claims +2.7 and returns +2.2 +/- 3.0 on 987 picks, with 58
+# picks at -250 or shorter instead of 109. The change makes the stated edge
+# honest; it does not raise the return.
+BACK_TO_BACK_LOGIT = -0.15
 # The goal total still blends halfway with the market's total; that weight and
 # the half-goal gate are Rene's product decision, not fitted estimates, and
 # the backtest shows no edge for totals at any setting. Do not retune them

@@ -89,11 +89,11 @@ def test_moneyline_prices_the_market_consensus_shifted_for_a_back_to_back():
     assert decisions[decisions["market"].eq("h2h")].iloc[0]["reason"] == (
         "price_below_break_even"
     )
-    # The home team played last night, so the away side moves 0.19 logit up.
+    # The home team played last night, so the away side moves 0.15 logit up.
     published, decisions = _decide(_projection(), offers, home_back_to_back=True)
     published = published.iloc[0]
     h2h = decisions[decisions["market"].eq("h2h")].iloc[0]
-    probability = 1 - 1 / (1 + math.exp(-(math.log(market / (1 - market)) - 0.19)))
+    probability = 1 - 1 / (1 + math.exp(-(math.log(market / (1 - market)) - 0.15)))
     assert h2h["status"] == "recommended"
     assert h2h["side"] == "away" and h2h["price"] == 100
     assert h2h["win_probability"] == pytest.approx(probability, abs=1e-9)
